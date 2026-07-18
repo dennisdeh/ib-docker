@@ -95,7 +95,7 @@ jobs:
 
           git add Dockerfile.template Dockerfile.tws.template
           git commit -m "Update IBC from ${ver} to ${latest}"
-          git push --set-upstream origin "$branch"
+          git push --set-upstream origin "$branch" --force
 
           gh pr create --base master --fill
 
