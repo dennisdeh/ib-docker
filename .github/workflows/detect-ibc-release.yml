@@ -84,7 +84,7 @@ jobs:
           git config user.name github-actions
           git config user.email github-actions@github.com
           git pull
-          git push --set-upstream origin "$branch" --force
+          git checkout -b "$branch"
 
           # update Dockerfile.template, but don't run update.sh
           # next ib gateway release will run update.sh
