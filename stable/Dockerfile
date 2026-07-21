@@ -8,9 +8,9 @@
 # hadolint global ignore=DL3008,DL4006
 FROM ubuntu:24.04 AS setup
 
-ENV IB_GATEWAY_VERSION=10.45.1g
+ENV IB_GATEWAY_VERSION=10.45.1i
 ENV IB_GATEWAY_CHANNEL=stable
-ENV IBC_VERSION=3.23.0
+ENV IBC_VERSION=3.24.1
 ARG DEBIAN_FRONTEND=noninteractive
 ARG IB_GATEWAY_FILE="ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh"
 ARG IB_GATEWAY_REPO="https://github.com/dennisdeh/ib-gateway-docker"
@@ -66,7 +66,7 @@ COPY ./scripts /root/scripts
 
 FROM ubuntu:24.04
 
-ENV IB_GATEWAY_VERSION=10.45.1g
+ENV IB_GATEWAY_VERSION=10.45.1i
 # IB Gateway user constants
 ARG USER_ID="${USER_ID:-1000}"
 ARG USER_GID="${USER_GID:-1000}"
