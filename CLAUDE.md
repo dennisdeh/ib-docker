@@ -4,7 +4,7 @@
 what the code cannot — which command to trust, what "done" means, and which
 plausible-looking action is the wrong one.*
 
-*Last updated: 2026-08-25*
+*Last updated: 2026-08-26*
 
 ---
 
@@ -296,8 +296,9 @@ tests/run.sh all
 (`.github/workflows/test.yml`).
 
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
-  reads `docker-compose.yml` and `.env-dist` as text — no container, no network,
-  no credentials. 26 tests as of 2026-08-25.
+  reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
+  which does the same for the release automation in `.github/workflows/` — no
+  container, no network, no credentials. 42 tests as of 2026-08-26.
 - `tests/container/` starts one throwaway container from an existing image with
   a command override that runs **only** the port-forwarding half of `run.sh`.
   It never starts IBC, so it needs no credentials and never contacts IB — which
@@ -346,9 +347,38 @@ trusting it — see *Debugging*.
 
 - CI does not run on `update-*-to-*` or `IBC-update*` branches (by design); it
   runs on every other branch and on PRs to `master`.
-- Publishing is tag-driven: pushing `v*` triggers `publish.yml`, which derives
-  the channel from the **second dash-separated field of the tag name** and now
-  refuses anything that is not `stable`/`latest`. Tag as `v<version>-<channel>`.
+- **A new IB Gateway version publishes itself.** `detect-releases.yml` polls IB
+  daily, and for a channel that moved it attaches the installers to a release
+  here, runs `update.sh`, regenerates `README.md`, opens the bump PR — and then
+  **calls `publish.yml`**, which pushes `ib-gateway` and `tws-rdesktop` to
+  `ghcr.io/dennisdeh` tagged `<version>`, `<major.minor>` and `<channel>`.
+  Nobody has to merge or tag for the images to appear. *(In effect 2026-08-26.)*
+  - The images are built from the **bot's own commit**, not from `master` — see
+    `docs/DECISIONS.md` #14 for why, and for why it is a `workflow_call` rather
+    than a pushed `v*` tag.
+  - One IB version drives **both** images: `update.sh` renders `Dockerfile.tws`
+    from the same `$VERSION`, so there is no separate TWS version to detect.
+  - IBC bumps do **not** publish, and that is deliberate — `detect-ibc-release.yml`
+    touches only the templates, so no channel image changes. See `DECISIONS.md` #2.
+- Publishing is *also* tag-driven, for a release by hand: pushing `v*` triggers
+  `publish.yml`, which derives the channel from the **second dash-separated
+  field of the tag name** and refuses anything that is not `stable`/`latest`.
+  Tag as `v<version>-<channel>`. A `workflow_dispatch` on `publish.yml` is the
+  third way in — pick a channel, leave the version blank to take it from
+  `<channel>/Dockerfile`.
+- **`publish.yml` refuses to tag an image with a version it does not contain.**
+  It compares the version it is about to publish against
+  `ENV IB_GATEWAY_VERSION=` in the channel Dockerfile it is building and fails
+  on a mismatch. That is the one publishing mistake nothing downstream can see.
+- Docker Hub is a mirror and is skipped when `DOCKERHUB_USERNAME` /
+  `DOCKERHUB_TOKEN` are unset; ghcr.io is never optional.
+- **`ghcr.io/dennisdeh/ib-gateway` is not anonymously pullable, and
+  `Dockerfile.tws` starts `FROM` it.** Every workflow that builds the TWS image
+  therefore logs in to ghcr.io and carries `packages: read` (`packages: write`
+  when publishing) — including the caller, since a called workflow cannot hold
+  a permission its caller withheld. A version that has never been published
+  cannot be built this way at all, which is why `publish.yml` pushes the gateway
+  *before* it builds TWS. See `docs/OPEN_ITEMS.md` #16.
 - Every workflow job declares least-privilege `permissions:`. If a step starts
   failing on a token scope, widen *that job*, not the repository default.
 - `detect-releases.yml` and `detect-ibc-release.yml` run daily at 06:00 UTC and

@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016  # ${{ ... }} is GitHub Actions syntax, matched literally
 #
 # Properties of the CI definition that only show up once a workflow has already
 # run the wrong way. Reads .github/workflows as text; starts nothing.
+#
+# The release automation is asserted here too: detect a new IB Gateway version,
+# build it, push it to ghcr.io. None of that can be exercised offline, and its
+# failure modes are silent - a workflow that publishes nothing still reports
+# success - so what is checked is the wiring, read out of the YAML as text.
 
 setup() {
 	ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
@@ -99,4 +105,149 @@ setup() {
 			return 1
 		}
 	done
+}
+
+# Everything indented under `  <name>:` in a workflow's jobs map. Comments in
+# these files are indented past their key, so `#` is excluded from the column
+# that would otherwise end the block.
+job_block() {
+	awk -v job="$2" '
+		/^jobs:/                     { in_jobs = 1; next }
+		in_jobs && /^[^[:space:]#]/  { in_jobs = 0 }
+		in_jobs && $0 ~ "^  " job ":[[:space:]]*$" { in_job = 1; next }
+		in_job && /^  [^[:space:]#]/ { in_job = 0 }
+		in_job                       { print }
+	' "$1"
+}
+
+job_names() {
+	awk '
+		/^jobs:/ { in_jobs = 1; next }
+		in_jobs && /^[^[:space:]#]/ { in_jobs = 0 }
+		in_jobs && /^  [a-z][a-z0-9_-]*:[[:space:]]*$/ {
+			gsub(/[[:space:]:]/, ""); print
+		}
+	' "$1"
+}
+
+# Everything belonging to one `      - name: <step>` entry, up to the next step.
+step_block() {
+	awk -v step="$2" '
+		$0 ~ "^      - name: " step "$" { in_step = 1; next }
+		in_step && /^      - /          { in_step = 0 }
+		in_step                         { print }
+	' "$1"
+}
+
+# First line number a fixed string appears on, so step order can be asserted.
+line_of() {
+	grep -nF -- "$2" "$1" | head -1 | cut -d : -f 1
+}
+
+@test "publish: the workflow can be called by another workflow" {
+	# The release bot cannot publish by pushing a `v*` tag: a tag pushed with
+	# GITHUB_TOKEN starts no workflow run. `workflow_call` is the only path
+	# that does not silently publish nothing.
+	run grep -c '^  workflow_call:' "${WORKFLOWS}/publish.yml"
+	[ "$output" = "1" ]
+}
+
+@test "publish: the tag push and manual paths are still there" {
+	run grep -c '^  workflow_dispatch:' "${WORKFLOWS}/publish.yml"
+	[ "$output" = "1" ]
+	run grep -c '^  push:' "${WORKFLOWS}/publish.yml"
+	[ "$output" = "1" ]
+}
+
+@test "publish: both images are pushed to ghcr.io" {
+	run cat "${WORKFLOWS}/publish.yml"
+	[[ $output == *"ghcr.io/dennisdeh/ib-gateway"* ]]
+	[[ $output == *"ghcr.io/dennisdeh/tws-rdesktop"* ]]
+
+	run grep -c 'push: true' "${WORKFLOWS}/publish.yml"
+	[ "$output" = "2" ]
+}
+
+@test "publish: the job may write packages" {
+	run job_block "${WORKFLOWS}/publish.yml" publish-docker
+	[[ $output == *"packages: write"* ]]
+}
+
+@test "publish: the gateway is pushed before TWS is built" {
+	# Dockerfile.tws opens FROM ghcr.io/dennisdeh/ib-gateway:<version>. For a
+	# version being published for the first time that tag exists only because
+	# the step above pushed it, so this order is the whole reason a brand new
+	# version can be built at all.
+	gateway="$(line_of "${WORKFLOWS}/publish.yml" 'name: Build and push ibgateway')"
+	tws="$(line_of "${WORKFLOWS}/publish.yml" 'name: Build and push TWS')"
+	[ -n "$gateway" ]
+	[ -n "$tws" ]
+	[ "$gateway" -lt "$tws" ]
+}
+
+@test "publish: emits the three tags template_README.md documents" {
+	# version, major.minor, channel - for each of the two images.
+	run grep -c 'type=raw,value=${{ steps.version.outputs.version }}' "${WORKFLOWS}/publish.yml"
+	[ "$output" = "2" ]
+	run grep -c 'type=raw,value=${{ steps.version.outputs.minor }}' "${WORKFLOWS}/publish.yml"
+	[ "$output" = "2" ]
+	run grep -c 'type=raw,value=${{ steps.target.outputs.channel }}' "${WORKFLOWS}/publish.yml"
+	[ "$output" = "2" ]
+}
+
+@test "publish: Docker Hub is optional, ghcr.io is not" {
+	# Docker Hub needs secrets that a fork has no way to hold. Logging in to it
+	# unconditionally fails the whole publish over a mirror.
+	run job_block "${WORKFLOWS}/publish.yml" publish-docker
+	[[ $output == *"steps.dockerhub.outputs.configured == 'true'"* ]]
+}
+
+@test "detect-releases: a publish job calls the publish workflow" {
+	run job_names "${WORKFLOWS}/detect-releases.yml"
+	[[ $output == *"publish"* ]]
+
+	run job_block "${WORKFLOWS}/detect-releases.yml" publish
+	[[ $output == *"uses: ./.github/workflows/publish.yml"* ]]
+	[[ $output == *"secrets: inherit"* ]]
+}
+
+@test "detect-releases: the workflow it calls exists" {
+	called="$(job_block "${WORKFLOWS}/detect-releases.yml" publish |
+		grep -o 'uses: \./[^[:space:]]*' | cut -d ' ' -f 2)"
+	[ -n "$called" ]
+	[ -f "${ROOT}/${called#./}" ]
+}
+
+@test "detect-releases: publish is told the channel, version and commit" {
+	run job_block "${WORKFLOWS}/detect-releases.yml" publish
+	[[ $output == *"channel: \${{ matrix.target.channel }}"* ]]
+	[[ $output == *"version: \${{ matrix.target.version }}"* ]]
+	# The commit, not the branch name: a later push to the bot branch must not
+	# change what was published under this version.
+	[[ $output == *"ref: \${{ matrix.target.ref }}"* ]]
+}
+
+@test "detect-releases: the per-channel decision is not carried in job outputs" {
+	# Both matrix legs would write the same `outputs:` name and the last one to
+	# finish would win, so `stable` and `latest` overwrote each other's version.
+	# The legs hand over files instead; the collect job reassembles them.
+	job_block "${WORKFLOWS}/detect-releases.yml" detect-release >"${BATS_TEST_TMPDIR}/job"
+	run grep -c '^    outputs:' "${BATS_TEST_TMPDIR}/job"
+	[ "$output" = "0" ]
+
+	run job_block "${WORKFLOWS}/detect-releases.yml" publish
+	[[ $output == *"fromJSON(needs.collect.outputs.targets)"* ]]
+}
+
+@test "detect-releases: nothing detected means nothing is published" {
+	run job_block "${WORKFLOWS}/detect-releases.yml" publish
+	[[ $output == *"needs.collect.outputs.targets != '[]'"* ]]
+}
+
+@test "detect-releases: both legs record a plan, updated or not" {
+	# The collect job globs pending/*.json; a leg that skipped writing its file
+	# would make that glob fail rather than publish nothing.
+	run step_block "${WORKFLOWS}/detect-releases.yml" "Record what to publish"
+	[ -n "$output" ]
+	[[ $output != *"if:"* ]]
 }

@@ -3,14 +3,16 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-25 — from the QA / adversarial QA sweep of that date.*
+*Last updated: 2026-08-26 — items 1-16 from the QA / adversarial QA sweep of
+2026-08-25; item 17 from wiring release detection to publication on 2026-08-26.*
 
 Verified clean in the same sweep, so nobody re-checks: **no secret has ever been
 committed** on any branch (`.env`, `.env.bak`, `*.pem`, `ssh/`, `data/`, `keylock`
 — 0 commits each, all refs); the full `pre-commit`
 hook set is green tree-wide (after the repairs recorded under *High* below); the IB API
-ports are bound to `127.0.0.1`; PR builds run with `push: false` and receive no
-registry credentials; `bastion/sshd_config` is genuinely hardened (publickey-only,
+ports are bound to `127.0.0.1`; PR builds still run with `push: false` — since
+2026-08-26 they hold a `packages: read` ghcr.io login, which pulls the base image
+and cannot push anything (item 16); `bastion/sshd_config` is genuinely hardened (publickey-only,
 `ForceCommand /usr/sbin/nologin`, `MaxSessions 0`, modern KEX/cipher/MAC lists).
 
 ## High
@@ -64,8 +66,10 @@ this is host state, not a commit). `cert.pem` is a public certificate and stays
 
 ## Medium
 
-*Four of the five were fixed on 2026-08-25 (branch `qa-medium-fixes`). Only
-item 7 is still open, because it needs a decision rather than a patch.*
+*Items 4-8 came from the 2026-08-25 sweep; four of the five were fixed the same
+day on branch `qa-medium-fixes`. Item 16 is still open — the local TWS build
+needs a decision (make the package public, or add a `build.args` entry) rather
+than a patch. Item 17 was found and fixed on 2026-08-26.*
 
 ### 4. IBC and the aarch64 JDK installed without verification — **FIXED**
 
@@ -192,7 +196,8 @@ resolves to `inv_gateway`/`inv_bastion` on ports 9899/9898/9897 and bastion
 ### 16. `docker compose build --pull tws` cannot work on a clean machine — **FIXED**
 
 *Found 2026-08-25, while verifying the merged compose file. Not caused by that
-merge — it predates it.*
+merge — it predates it. **CI half fixed 2026-08-26**; the local build is still
+open, so the workaround below is still the one to use here.*
 
 `Dockerfile.tws` starts `FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION}` with
 `IB_VERSION` defaulting to the channel's gateway version, so the TWS build needs
@@ -358,6 +363,55 @@ exit code and how far it got:
 | exit 1 at the `java -version` step | no JVM survived into the runtime stage, see #18 and `DECISIONS.md` #18 |
 | exit 100, `404 Not Found` from `ports.ubuntu.com` | this item; retry, and if it persists check whether Ubuntu is mid-publication |
 
+**In CI this is now handled, on 2026-08-26**, and it had to be for the release
+automation to work at all. `build.yml` logs in to `ghcr.io` with the run's own
+`GITHUB_TOKEN` and carries `packages: read`, so the TWS leg can pull the gateway
+image of the version the channel already publishes; `on-push-n-pr.yml` and
+`detect-ibc-release.yml` grant the same scope, because a called workflow cannot
+hold a permission its caller withheld. Two limits remain, both by construction:
+
+- a version that has **never** been published cannot be built this way. That is
+  why `publish.yml` pushes the gateway before it builds TWS, and why the release
+  path goes through `publish.yml` rather than `build.yml`;
+- a pull request **from a fork** gets a read-only `GITHUB_TOKEN` with no access
+  to this repository's packages, so its TWS leg still fails. Nobody has opened
+  one; if that changes, making the package public is the fix.
+
+The local build is untouched — `docker compose build --pull tws` on this machine
+still needs the `docker tag` workaround above.
+
+### 17. Detecting a new IB Gateway version published nothing — **FIXED**
+
+*Found and fixed 2026-08-26, on branch `worktree-auto-publish-images`, while
+wiring detection to publication as asked.*
+
+`detect-releases.yml` created the GitHub release, regenerated the channel and
+opened the bump PR, then called `build.yml` — which builds with `push: false`.
+Reaching `ghcr.io` needed a human to merge the PR and push a
+`v<version>-<channel>` tag. Two further defects sat underneath that:
+
+- **The matrix job's outputs could not carry a per-channel answer.** Both legs
+  of `strategy.matrix.channel` wrote the same `outputs.update` and
+  `outputs.channel`, and a matrix job keeps only the last leg to finish, so the
+  downstream `build` job received one arbitrary channel — the wrong one roughly
+  half the time, and *neither* leg's version. The legs now hand over a small
+  JSON file each; a `collect` job reassembles them into the publish matrix.
+- **Tagging would not have worked either.** A `v*` tag pushed with
+  `GITHUB_TOKEN` starts no workflow run, so the obvious repair — have the bot
+  push the tag and let `publish.yml` notice — publishes nothing while reporting
+  success. `publish.yml` gained `workflow_call` and is invoked directly. See
+  `DECISIONS.md` #14.
+
+`publish.yml` also refuses to tag an image with a version it does not contain:
+it compares against `ENV IB_GATEWAY_VERSION=` in the channel Dockerfile it is
+building. Sixteen assertions in `tests/unit/workflows.bats` pin the wiring;
+thirteen of them were shown red against the pre-fix workflows on 2026-08-26.
+
+**Not verified end to end**, and it cannot be from here: the flow needs a real
+IB release, GitHub-hosted runners and push credentials for `ghcr.io`. The first
+live proof will be the next IB Gateway version, or a `workflow_dispatch` of
+`publish.yml` against a channel.
+
 ## Low / accepted risk (record the decision if you accept it)
 
 | # | item | note |
@@ -369,4 +423,4 @@ exit code and how far it got:
 | 13 | Dependabot watches `/stable` and `/latest` only | Those are *generated*; a base-image bump there is overwritten by the next `update.sh`. The real sources (`Dockerfile.template`, `Dockerfile.tws.template`) and `/bastion` are unwatched, as is the floating tag `lscr.io/linuxserver/rdesktop:ubuntu-xfce`. |
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
 | 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere | The bastion actually publishes `SSH_LISTEN_PORT=22222` on **0.0.0.0** — every other port here is pinned to `127.0.0.1`. Reachability is the point of a bastion, but a firewall rule written for 2222 protects nothing. |
-| 16 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
+| 18 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |

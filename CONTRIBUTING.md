@@ -101,4 +101,21 @@ When you are ready to submit your contribution:
    link to the issue you created.
 4. We will review your PR, provide feedback, and merge it once it's ready.
 
+## How a Release Happens
+
+You do not need to do anything to publish a new IB Gateway or TWS version, and
+you should not tag one by hand.
+
+A scheduled workflow asks Interactive Brokers every morning what the current
+build is for each channel. When it has moved, that run attaches the installers
+to a release here, regenerates the channel with `update.sh`, rewrites
+`README.md` from `template_README.md`, opens the version-bump pull request, and
+publishes both images to `ghcr.io/dennisdeh` — tagged with the version, the
+`major.minor` series and the channel name. The bump PR is still reviewed and
+merged by a human; the images do not wait for it.
+
+The same applies to `image-files/`: your change reaches the published images at
+the next IB Gateway release, when `update.sh` regenerates the channels. To
+publish it sooner, run `publish.yml` from the Actions tab and pick a channel.
+
 Thank you for your contribution!

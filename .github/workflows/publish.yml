@@ -1,6 +1,61 @@
 name: "Publish Docker"
 
+# Build both images for one channel and push them to the GitHub Container
+# Registry, and to Docker Hub when its secrets are configured.
+#
+# Three ways in, all reaching the same job:
+#
+#   workflow_call      what detect-releases.yml uses, so a newly detected IB
+#                      Gateway / TWS version reaches ghcr.io with no human
+#                      step. It has to be a call rather than a tag push: a tag
+#                      pushed with GITHUB_TOKEN does not start a workflow run,
+#                      so "tag it and let this workflow notice" would publish
+#                      nothing, quietly. See docs/DECISIONS.md.
+#   push of a `v*` tag the manual release path, `v<version>-<channel>`.
+#   workflow_dispatch  republish a channel on demand, from the Actions tab.
+#
+# The gateway is pushed before the TWS build starts, and that order is load
+# bearing: Dockerfile.tws opens `FROM ghcr.io/dennisdeh/ib-gateway:<version>`,
+# so for a version being published for the first time that tag exists only
+# once the step above has pushed it.
+
 on:
+  workflow_call:
+    inputs:
+      channel:
+        description: "Release channel: stable or latest"
+        required: true
+        type: string
+      version:
+        description: "IB Gateway version the images are tagged with"
+        required: true
+        type: string
+      ref:
+        description: "Commit or branch to build; defaults to the calling ref"
+        required: false
+        type: string
+        default: ''
+
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel to publish"
+        required: true
+        type: choice
+        options:
+          - stable
+          - latest
+      version:
+        description: "Version to tag; read from <channel>/Dockerfile when empty"
+        required: false
+        type: string
+        default: ''
+      ref:
+        description: "Commit or branch to build; defaults to this workflow's ref"
+        required: false
+        type: string
+        default: ''
+
   push:
     tags:
       - 'v*'
@@ -14,29 +69,97 @@ jobs:
   publish-docker:
     name: Publish Docker Image
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     permissions:
       contents: read
       packages: write   # push to ghcr.io
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.ref }}
-          lfs: true
-
-      - name: Extract release channel
-        id: channel
+      - name: Resolve channel and ref
+        id: target
         env:
+          IN_CHANNEL: ${{ inputs.channel }}
+          IN_REF: ${{ inputs.ref }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          channel="$(cut -d - -f 2 <<< "$REF_NAME")"
+          if [ -n "$IN_CHANNEL" ]; then
+            channel="$IN_CHANNEL"
+          else
+            channel="$(cut -d - -f 2 <<< "$REF_NAME")"
+          fi
           # This value selects the build context directory, so a malformed tag
           # would publish the wrong channel - or an empty context - silently.
           if [ "$channel" != 'stable' ] && [ "$channel" != 'latest' ]; then
-            echo "::error::tag '$REF_NAME' does not name a channel; expected v<version>-stable or v<version>-latest"
+            echo "::error::'${IN_CHANNEL:-$REF_NAME}' does not name a channel; expected stable, latest, or a tag v<version>-<channel>"
             exit 1
           fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "ref=${IN_REF:-$GITHUB_REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout source code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+          lfs: true
+
+      - name: Resolve version
+        id: version
+        env:
+          IN_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          CHANNEL: ${{ steps.target.outputs.channel }}
+        run: |
+          if [ -n "$IN_VERSION" ]; then
+            version="$IN_VERSION"
+          elif [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            version="${REF_NAME#v}"
+            version="${version%-*}"
+          else
+            version=''
+          fi
+
+          # What the tree about to be built actually installs. It is both the
+          # fallback for a dispatch that named no version and, below, the check
+          # that the tags being published describe the image being published.
+          declared="$(grep 'ENV IB_GATEWAY_VERSION=' "${CHANNEL}/Dockerfile" | head -1 | cut -d '=' -f 2)"
+          version="${version:-$declared}"
+
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9a-z]+$ ]]; then
+            echo "::error::'$version' is not an IB Gateway version"
+            exit 1
+          fi
+          # Tagging an image with a version it does not contain is the one
+          # mistake nobody downstream can detect, so refuse it here.
+          if [ "$version" != "$declared" ]; then
+            echo "::error::${CHANNEL}/Dockerfile builds ${declared}, but the images would be tagged ${version}"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=$(cut -d . -f 1,2 <<< "$version")" >> "$GITHUB_OUTPUT"
+          # What was actually built, for the image's revision label. Under
+          # workflow_call `github.sha` is the *caller's* commit - master, on the
+          # scheduled run - not the bot commit these images come from.
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          # ghcr.io is the registry this repository owns and is never optional.
+          # Docker Hub needs secrets a fork will not have, and an unconditional
+          # login there would fail the whole publish over a mirror.
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "gateway=ghcr.io/dennisdeh/ib-gateway,dennisdeh/ib-gateway" >> "$GITHUB_OUTPUT"
+            echo "tws=ghcr.io/dennisdeh/tws-rdesktop,dennisdeh/tws-rdesktop" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "gateway=ghcr.io/dennisdeh/ib-gateway" >> "$GITHUB_OUTPUT"
+            echo "tws=ghcr.io/dennisdeh/tws-rdesktop" >> "$GITHUB_OUTPUT"
+            echo "::notice::Docker Hub secrets are not set; publishing to ghcr.io only"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -49,14 +172,15 @@ jobs:
       ###############################################################
       #   Login container registry
       ###############################################################
-      - name: Log in to the Container registry
+      - name: Log in to the GitHub container registry
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to the Container registry
+      - name: Log in to Docker Hub
+        if: ${{ steps.dockerhub.outputs.configured == 'true' }}
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -70,21 +194,26 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: |
-            ghcr.io/dennisdeh/ib-gateway
-            dennisdeh/ib-gateway
+          images: ${{ steps.dockerhub.outputs.gateway }}
           flavor: |
             latest=false
+          # The three documented tags, spelled out rather than pattern-matched
+          # off the git ref: this workflow now also runs where there is no
+          # `v<version>-<channel>` tag to match against. `template_README.md`
+          # lists the same three.
           tags: |
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\w+),group=1
-            type=match,pattern=v(\d+.\d+.\w+)+\-(stable|latest),group=2
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.minor }}
+            type=raw,value=${{ steps.target.outputs.channel }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.version.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}-${{ steps.target.outputs.channel }}
 
       - name: Build and push ibgateway
         uses: docker/build-push-action@v7
         with:
           platforms: ${{ env.PLATFORMS }}
-          context: ${{ steps.channel.outputs.channel }}
+          context: ${{ steps.target.outputs.channel }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           push: true
@@ -99,22 +228,23 @@ jobs:
         id: meta-tws
         uses: docker/metadata-action@v6
         with:
-          images: |
-            ghcr.io/dennisdeh/tws-rdesktop
-            dennisdeh/tws-rdesktop
+          images: ${{ steps.dockerhub.outputs.tws }}
           flavor: |
             latest=false
           tags: |
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\w+),group=1
-            type=match,pattern=v(\d+.\d+.\w+)+\-(stable|latest),group=2
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.minor }}
+            type=raw,value=${{ steps.target.outputs.channel }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.version.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}-${{ steps.target.outputs.channel }}
 
       - name: Build and push TWS
         uses: docker/build-push-action@v7
         with:
           platforms: ${{ env.PLATFORMS }}
-          context: ${{ steps.channel.outputs.channel }}
-          file: ${{ steps.channel.outputs.channel }}/Dockerfile.tws
+          context: ${{ steps.target.outputs.channel }}
+          file: ${{ steps.target.outputs.channel }}/Dockerfile.tws
           cache-from: type=gha
           cache-to: type=gha,mode=max
           push: true
