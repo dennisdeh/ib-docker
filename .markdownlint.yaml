@@ -10,3 +10,8 @@ MD013: false
 # The logo in template_README.md is an <img> tag because it needs an explicit
 # height; CommonMark image syntax cannot express that.
 MD033: false
+
+# MD036 (emphasis-as-heading) is disabled because CLAUDE.md prescribes a
+# vintage line - *Last updated: YYYY-MM-DD* - under headings throughout docs/.
+# That is metadata, not a heading, and the rule cannot tell the difference.
+MD036: false

@@ -13,6 +13,9 @@ defaults:
 jobs:
   detect-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # gh release create, push the bump branch
+      pull-requests: write   # gh pr create
     outputs:
       update: ${{ steps.check-update.outputs.has_update }}
       channel: ${{ matrix.channel }}
@@ -25,34 +28,46 @@ jobs:
 
       - name: Get Latest Version
         id: version
+        env:
+          CHANNEL: ${{ matrix.channel }}
         run: |
-          res=$(curl -s https://download2.interactivebrokers.com/installers/tws/${{ matrix.channel }}-standalone/version.json | sed 's/tws${{ matrix.channel }}_callback(//g;s/);//g')
+          res=$(curl -s "https://download2.interactivebrokers.com/installers/tws/${CHANNEL}-standalone/version.json" | sed "s/tws${CHANNEL}_callback(//g;s/);//g")
           build_version=$(jq -r '.buildVersion' <<< "$res")
-          #build_dateTime=$(jq -r '.buildDateTime' <<< "$res")
-          echo "build_version=$build_version" >> $GITHUB_OUTPUT
-          #echo "build_dateTime=$build_dateTime" >> $GITHUB_OUTPUT
+          # This value comes from a third-party server and is used below in
+          # shell, in filenames and in a branch name. Refuse anything that is
+          # not a plain IB version, so nothing else can ever reach those.
+          if ! [[ "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9a-z]+$ ]]; then
+            echo "::error::unexpected buildVersion from IB: '$build_version'"
+            exit 1
+          fi
+          echo "build_version=$build_version" >> "$GITHUB_OUTPUT"
 
       - name: Check if there is an update
         id: check-update
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
         run: |
           gh release list > /tmp/ibgateway-releases
-          if grep -qF '${{ matrix.channel }}@${{ steps.version.outputs.build_version }}' /tmp/ibgateway-releases
+          if grep -qF "${CHANNEL}@${BUILD_VERSION}" /tmp/ibgateway-releases
           then
-            echo "has_update=false" >> $GITHUB_OUTPUT
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
           else
-            echo "has_update=true" >> $GITHUB_OUTPUT
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
         run: |
           archs="x64 arm"
           for arch in $archs
           do
-            download_url="https://download2.interactivebrokers.com/installers/ibgateway/${{ matrix.channel }}-standalone/ibgateway-${{ matrix.channel }}-standalone-linux-${arch}.sh"
-            dest="ibgateway-${{ steps.version.outputs.build_version }}-standalone-linux-${arch}.sh"
+            download_url="https://download2.interactivebrokers.com/installers/ibgateway/${CHANNEL}-standalone/ibgateway-${CHANNEL}-standalone-linux-${arch}.sh"
+            dest="ibgateway-${BUILD_VERSION}-standalone-linux-${arch}.sh"
             curl -sSL "$download_url" --output "$dest"
             sha256sum "$dest" > "${dest}.sha256"
           done
@@ -61,40 +76,48 @@ jobs:
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
         run: |
-          gh release create 'ibgateway-${{ matrix.channel }}@${{ steps.version.outputs.build_version }}' \
-            -t 'IB Gateway ${{ matrix.channel }} ${{ steps.version.outputs.build_version }}' \
-            -n 'IB Gateway ${{ matrix.channel }} ${{ steps.version.outputs.build_version }} release files' \
+          gh release create "ibgateway-${CHANNEL}@${BUILD_VERSION}" \
+            -t "IB Gateway ${CHANNEL} ${BUILD_VERSION}" \
+            -n "IB Gateway ${CHANNEL} ${BUILD_VERSION} release files" \
             ibgateway-*
 
       - name: Update ${{ matrix.channel }}
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
-        run: ./update.sh ${{ matrix.channel }} ${{ steps.version.outputs.build_version }}
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
+        run: ./update.sh "$CHANNEL" "$BUILD_VERSION"
 
       - name: Update README
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
         run: |
           # get stable and latest versions
           export _stable_dockerfile='stable/Dockerfile'
           export _latest_dockerfile='latest/Dockerfile'
-          if [ ${{ matrix.channel }} = 'latest' ]; then
+          if [ "$CHANNEL" = 'latest' ]; then
             # set latest
-            export LATEST_VERSION=${{ steps.version.outputs.build_version }}
+            export LATEST_VERSION="$BUILD_VERSION"
             export LATEST_MINOR=$(echo $LATEST_VERSION | cut -d '.' -f1,2)
 
             # set stable
             export STABLE_VERSION=$(grep 'ENV IB_GATEWAY_VERSION=' $_stable_dockerfile | head -1 | cut -d '=' -f2)
             export STABLE_MINOR=$(echo $STABLE_VERSION| cut -d '.' -f1,2)
 
-          elif [ ${{ matrix.channel }} = 'stable' ]; then
+          elif [ "$CHANNEL" = 'stable' ]; then
             # set STABLE
-            export STABLE_VERSION=${{ steps.version.outputs.build_version }}
+            export STABLE_VERSION="$BUILD_VERSION"
             export STABLE_MINOR=$(echo $STABLE_VERSION | cut -d '.' -f1,2)
             # set LATEST
             export LATEST_VERSION=$(grep 'ENV IB_GATEWAY_VERSION=' $_latest_dockerfile | head -1 | cut -d '=' -f2)
             export LATEST_MINOR=$(echo $LATEST_VERSION| cut -d '.' -f1,2)
           else
-            echo "invalid channel: ${{ matrix.channel }}"
+            echo "invalid channel: ${CHANNEL}"
             exit 1
           fi
           # IBC
@@ -108,14 +131,16 @@ jobs:
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
         run: |
-          t_branch='update-${{ matrix.channel }}-to-${{ steps.version.outputs.build_version }}'
+          t_branch="update-${CHANNEL}-to-${BUILD_VERSION}"
           git config user.name github-actions
           git config user.email github-actions@github.com
           git pull
           git checkout -b "$t_branch" origin/master
-          git add '${{ matrix.channel }}' README.md
-          git commit -m 'Update `${{ matrix.channel }}` to `${{ steps.version.outputs.build_version }}`'
+          git add "$CHANNEL" README.md
+          git commit -m "Update \`${CHANNEL}\` to \`${BUILD_VERSION}\`"
           git push --set-upstream origin "$t_branch"
 
           gh pr create --base master --fill
@@ -125,6 +150,8 @@ jobs:
     name: Call build workflow
     needs: detect-release
     if: needs.detect-release.outputs.update == 'true'
+    permissions:
+      contents: read
     uses: dennisdeh/ib-gateway-docker/.github/workflows/build.yml@master
     with:
         channel: ${{ needs.detect-release.outputs.channel }}

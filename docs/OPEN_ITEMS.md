@@ -64,50 +64,63 @@ this is host state, not a commit). `cert.pem` is a public certificate and stays
 
 ## Medium
 
-### 4. IBC and the aarch64 JDK are installed without verification
+*Four of the five were fixed on 2026-08-25 (branch `qa-medium-fixes`). Only
+item 7 is still open, because it needs a decision rather than a patch.*
 
-`Dockerfile.template` verifies the IB Gateway installer
-(`curl … .sha256 && sha256sum --check`) but downloads **`IBCLinux-${IBC_VERSION}.zip`
-and the Zulu JDK tarball with no checksum and no signature**. A compromised IBC
-release asset, or a MITM on the CDN, puts arbitrary code into a published image
-that logs into a brokerage account. The same gap exists in
-`Dockerfile.tws.template` by inheritance.
+### 4. IBC and the aarch64 JDK installed without verification — **FIXED**
 
-*Fix:* pin and verify a sha256 for both, the way the gateway installer already is.
+`Dockerfile.template` now pins `ARG IBC_SHA256` and `ARG ZULU_SHA256` and checks
+both before use, matching the treatment the IB Gateway installer already got.
+Neither vendor publishes a checksum file (both probed 2026-08-25: 404), so the
+digests are measured and pinned:
 
-### 5. GitHub Actions: no `permissions:` blocks, and untrusted input reaches `run:`
+- `IBCLinux-3.24.1.zip` → `d99ee28c…88bb8`
+- `zulu17.60.17-ca-fx-jre17.0.16-linux_aarch64.tar.gz` → `e74bcc2d…3b5d0`
 
-- **None of the five workflows declares `permissions:`**, so each job gets the
-  repository default `GITHUB_TOKEN` scope. `detect-releases.yml` and
-  `detect-ibc-release.yml` push branches, create releases and open PRs with it.
-- Third-party strings are interpolated **unquoted into shell** in ~15 places:
-  `steps.version.outputs.build_version` comes from
-  `download2.interactivebrokers.com/.../version.json`, and
-  `steps.ibc_version.outputs.IBC_LATEST` comes from `gh release list -R IbcAlpha/IBC`
-  — i.e. from a release *tag name* in a repository we do not control. Both then
-  land in `export LATEST_VERSION=${{ … }}`, `t_branch='update-…-${{ … }}'`,
-  `git commit -m '… ${{ … }}'` and similar.
+The JDK branch also had `;` separators, so a failed download or extraction did
+not stop the build; it is `&&`-chained now.
 
-Likelihood is low (both sources are reputable and TLS-protected) but the impact
-is a token with write access executing attacker-chosen shell.
+A pinned digest must move with `IBC_VERSION`, so
+`.github/workflows/detect-ibc-release.yml` recomputes it when it opens a bump
+PR. Verified 2026-08-25 by running that logic against the real 3.24.2 release:
+it downloads, hashes, rewrites the `ARG` line and greps to confirm the rewrite.
+The `sha256sum --check` form was proved both ways — `OK` on the genuine archive,
+exit 1 on a byte-appended copy.
 
-*Fix:* add least-privilege `permissions:` to every workflow, and pass every
-`${{ }}` through `env:` then reference `"$VAR"` quoted inside `run:`.
+**Takes effect at the next channel regeneration.** Per `DECISIONS.md` #2 the
+templates are edited without running `update.sh`; `latest/` and `stable/` pick
+this up with the next IB Gateway release, as IBC bumps already do.
 
-### 6. Root compose silently drops the bastion's security settings
+### 5. Workflows: no `permissions:`, untrusted input reaching `run:` — **FIXED**
 
-`docker-compose.yml` gives the `bastion` service **only** `USERS`.
-`bastion/entrypoint.sh` reads `TOTP_ENABLED`, `CA_ENABLED`, `BANNER_ENABLED`,
-`SSHD_HOST_CERT` and `SSHD_USER_CA` **at runtime**; `bastion/docker-compose.yml`
-passes all of them, the root file passes none. So `TOTP_ENABLED=yes` set in
-`.env` and started from the repo root does nothing, with no warning.
+Every job now declares least privilege: `contents: read` for the build and lint
+jobs, `contents: write` + `pull-requests: write` for the two bots that push
+branches and open PRs, `contents: read` + `packages: write` for publishing.
 
-Currently `TOTP_ENABLED=no` and `CA_ENABLED=no`, so nothing is exposed today —
-the failure mode is "I turned on MFA and it silently didn't apply".
+Every `${{ … }}` was moved out of `run:` bodies into `env:` and is referenced
+quoted — audited to **zero** remaining interpolations inside any `run:` block.
+Two boundary validations were added, which is the actual fix rather than
+quoting alone:
 
-*Fix:* mirror the environment block from `bastion/docker-compose.yml`.
+- IB's `buildVersion` must match `^[0-9]+\.[0-9]+\.[0-9a-z]+$` or the run
+  fails. It reaches shell, filenames and a branch name, so nothing else may
+  enter.
+- `publish.yml` refuses a tag whose second field is not `stable`/`latest`. That
+  value selects the Docker build context, so a malformed tag previously
+  published the wrong channel — or an empty context — silently.
+
+### 6. Root compose silently dropped the bastion's security settings — **FIXED**
+
+`docker-compose.yml` now passes `USER_SHELL`, `TOTP_ENABLED`, `TOTP_ISSUER`,
+`TOTP_QR_ENCODE`, `CA_ENABLED`, `SSHD_HOST_CERT`, `SSHD_USER_CA` and
+`BANNER_ENABLED` through to the bastion, mirroring `bastion/docker-compose.yml`.
+Verified 2026-08-25 with `docker compose config`: the values now appear in the
+service definition. **The running `inv_bastion` container does not pick this up
+until it is recreated** — it was deliberately not restarted.
 
 ### 7. `SSH_REMOTE_PORT` does the opposite of what the documentation says
+
+**Still open — needs a decision, see below.**
 
 `template_README.md` documents it as *"Remote port for ssh tunnel"*. In
 `image-files/scripts/run_ssh.sh` the tunnel is
@@ -118,35 +131,41 @@ ssh -TNR 127.0.0.1:${_LOCAL_PORT}:localhost:${_REMOTE_PORT}   # _LOCAL_PORT=$API
 
 In `-R bind:port:host:hostport`, the **first** port is what is opened on the
 remote server. So `API_PORT` is the remote port and `SSH_REMOTE_PORT` is the
-*container-local* target. `start_ssh()` defaults `SSH_REMOTE_PORT` to `API_PORT`,
-which makes the two readings identical and hides the bug — until someone sets a
-custom value, at which point the tunnel binds the wrong port remotely and
-forwards to a port nothing listens on, while reporting success.
+*container-local* target. `start_ssh()` defaults `SSH_REMOTE_PORT` to
+`API_PORT`, which makes the two readings identical and hides the bug — until
+someone sets a custom value, at which point the tunnel binds the wrong port
+remotely and forwards to a port nothing listens on, while reporting success.
 
-*Fix:* decide which behaviour is intended, then correct either the code or the
-documentation and the variable names (`_LOCAL_PORT`/`_REMOTE_PORT` are swapped
-relative to ssh's own terminology). This is a good first `bats` regression test.
+Two mutually exclusive repairs, and the choice is not the agent's to make:
 
-### 8. The documented onboarding path does not work
+- **Fix the code** so the variable means what the documentation says. Correct,
+  but it changes behaviour for anyone already compensating for the bug, and
+  this deployment runs with `SSH_TUNNEL=yes` — a wrong move here breaks the
+  live gateway's connectivity at its next restart.
+- **Fix the documentation** and rename `_LOCAL_PORT`/`_REMOTE_PORT` to match
+  ssh's own terminology. Zero behavioural risk, and honest about what the code
+  does today.
 
-`CONTRIBUTING.md` says `cp .env-dist .env` then `docker-compose build`. Verified
-2026-08-25:
+Either way it wants the first `bats` regression test.
 
-```
+### 8. The documented onboarding path did not work — **FIXED**
+
+`.env-dist` gained every key `docker-compose.yml` reads (`CONTAINER_NAME`,
+`CONTAINER_NAME_BASTION`, `PORT_HOST_*`, `SSH_LISTEN_PORT`, `BASTION_USERS`,
+the bastion's TOTP/CA settings, `APT_PROXY`, `BASE_VERSION`, `IMAGE_VERSION`),
+and `container_name` no longer defaults to the empty string Docker rejects.
+
+Verified 2026-08-25 — the exact command that used to fail:
+
+```text
 $ docker compose --env-file .env-dist config -q
-validating docker-compose.yml: services.bastion.container_name '' does not match pattern …
+$ echo $?
+0
 ```
 
-`.env-dist` is missing `CONTAINER_NAME`, `CONTAINER_NAME_BASTION`,
-`SSH_LISTEN_PORT`, `PORT_HOST_TWS_LIVE/PAPER`, `PORT_HOST_VNC_SERVER`,
-`PORT_HOST_RDP`, `APT_PROXY`, `BASE_VERSION`, `BASTION_USERS`, `USER_SHELL`,
-`TOTP_*`, `CA_ENABLED`, `SSHD_*` — all of which the fork's `docker-compose.yml`
-now requires. Separately, `container_name: ${CONTAINER_NAME:-}` can never be
-valid with its own default: an empty container name fails Docker's name pattern,
-so the variable is mandatory while looking optional.
-
-*Fix:* extend `.env-dist` to cover every key the root compose file reads, and
-either give `container_name` a real default or drop the `:-` .
+The live deployment is unaffected: with the real `.env` the same file still
+resolves to `inv_gateway`/`inv_bastion` on ports 9899/9898/9897 and bastion
+22222, confirmed by `docker compose config`.
 
 ## Low / accepted risk (record the decision if you accept it)
 

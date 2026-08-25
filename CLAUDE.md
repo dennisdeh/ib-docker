@@ -175,6 +175,11 @@ docker run --rm -v "$PWD:/workdir" -w /workdir davidanson/markdownlint-cli2:late
 ```
 
 - Lint `image-files/`, not `latest/`/`stable/` — the copies will be regenerated.
+- **`--all-files` means all *tracked* files.** A file you have created but not
+  yet `git add`ed is invisible to every hook, so a green run says nothing about
+  it. Stage new files *before* the verification run, or you will push work that
+  fails its own lint job — which is exactly how `CLAUDE.md` and `docs/` first
+  landed on `master` red.
 - Some hooks **rewrite files** (`trailing-whitespace`, `end-of-file-fixer`).
   Check `git status` after a run; a "Passed" second run may only mean the first
   one already edited the tree.
@@ -255,8 +260,10 @@ When the suite lands it should be **`bats-core` + Docker smoke tests**:
 - CI does not run on `update-*-to-*` or `IBC-update*` branches (by design); it
   runs on every other branch and on PRs to `master`.
 - Publishing is tag-driven: pushing `v*` triggers `publish.yml`, which derives
-  the channel from the **second dash-separated field of the tag name**. A
-  malformed tag publishes to the wrong channel.
+  the channel from the **second dash-separated field of the tag name** and now
+  refuses anything that is not `stable`/`latest`. Tag as `v<version>-<channel>`.
+- Every workflow job declares least-privilege `permissions:`. If a step starts
+  failing on a token scope, widen *that job*, not the repository default.
 - `detect-releases.yml` and `detect-ibc-release.yml` run daily at 06:00 UTC and
   open their own PRs. Before hand-bumping a version, check whether a bot branch
   or open PR already does it — that duplicate-avoidance check is what
@@ -265,6 +272,11 @@ When the suite lands it should be **`bats-core` + Docker smoke tests**:
   releases and downloaded by `Dockerfile.template` from `dennisdeh/…`, with a
   `sha256sum --check`. A build failing at the checksum step usually means the
   release asset is missing, not that the Dockerfile is wrong.
+- **IBC and the aarch64 Zulu JDK ship no checksum file, so their digests are
+  pinned in `Dockerfile.template` as `IBC_SHA256` / `ZULU_SHA256`.** `IBC_SHA256`
+  must move with `IBC_VERSION` — `detect-ibc-release.yml` recomputes it — and
+  `ZULU_SHA256` must move with `ZULU_NAME`. Changing either version without its
+  digest fails the build at verification, which is the intended behaviour.
 
 ---
 

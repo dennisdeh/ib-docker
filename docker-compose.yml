@@ -2,7 +2,7 @@ name: inv_ibkr
 services:
   ib-gateway:
     restart: always
-    container_name: ${CONTAINER_NAME:-}
+    container_name: ${CONTAINER_NAME:-ib-gateway}
     build:
       context: ./latest
       tags:
@@ -69,11 +69,22 @@ services:
         BASE_VERSION: ${BASE_VERSION}
     restart: unless-stopped
     image: dennisdeh/bastion:local-resolute
-    container_name: ${CONTAINER_NAME_BASTION:-}
+    container_name: ${CONTAINER_NAME_BASTION:-bastion}
     ports:
       - ${SSH_LISTEN_PORT}:22
     environment:
+      # bastion/entrypoint.sh reads all of these at runtime. Passing only USERS
+      # meant TOTP_ENABLED, CA_ENABLED and BANNER_ENABLED set in .env were
+      # silently ignored when starting from the repository root.
       USERS: ${BASTION_USERS:-ibgateway}
+      USER_SHELL: ${USER_SHELL:-}
+      TOTP_ENABLED: ${TOTP_ENABLED:-no}
+      TOTP_ISSUER: ${TOTP_ISSUER:-Bastion}
+      TOTP_QR_ENCODE: ${TOTP_QR_ENCODE:-UTF8}
+      CA_ENABLED: ${CA_ENABLED:-no}
+      SSHD_HOST_CERT: ${SSHD_HOST_CERT:-}
+      SSHD_USER_CA: ${SSHD_USER_CA:-}
+      BANNER_ENABLED: ${BANNER_ENABLED:-no}
     volumes:
       - $PWD/data/etc/passwd:/etc/passwd:ro
       - $PWD/data/etc/shadow:/etc/shadow:ro

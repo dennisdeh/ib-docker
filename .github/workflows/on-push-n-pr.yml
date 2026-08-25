@@ -12,6 +12,8 @@ on:
 jobs:
   build:
       name: Build image
+      permissions:
+        contents: read
       strategy:
         matrix:
           channel: ['stable', 'latest']

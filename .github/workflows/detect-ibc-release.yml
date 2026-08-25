@@ -17,6 +17,9 @@ jobs:
   detect-release:
     name: Detect Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the bump branch
+      pull-requests: write   # gh pr create
     outputs:
       update: ${{ steps.verify_latest.outputs.update }}
     strategy:
@@ -36,19 +39,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          IBC_LATEST="$(gh release list -R ${{ env.IBC_REPO }} --exclude-drafts --exclude-pre-releases |grep 'Latest'|cut -f1)"
-          if [ -n ${IBC_LATEST} ]
+          IBC_LATEST="$(gh release list -R "$IBC_REPO" --exclude-drafts --exclude-pre-releases | grep 'Latest' | cut -f1)"
+          if [ -n "${IBC_LATEST}" ]
           then
-            echo "IBC_LATEST=$IBC_LATEST" >> $GITHUB_OUTPUT
+            echo "IBC_LATEST=$IBC_LATEST" >> "$GITHUB_OUTPUT"
           else
-          echo "IBC_LATEST=" >> $GITHUB_OUTPUT
+            echo "IBC_LATEST=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify latest version
         id: verify_latest
+        env:
+          CURRENT_IBC: ${{ steps.version.outputs.CURRENT_IBC }}
+          IBC_LATEST: ${{ steps.ibc_version.outputs.IBC_LATEST }}
         run: |
-          current=${{ steps.version.outputs.CURRENT_IBC }}
-          latest=${{ steps.ibc_version.outputs.IBC_LATEST }}
+          current="$CURRENT_IBC"
+          latest="$IBC_LATEST"
 
           if [[ "$current" = "$latest" ]]; then
             update="false"
@@ -61,10 +67,13 @@ jobs:
       - name: Check if branch already exists
         id: verify_branch
         if: ${{ steps.verify_latest.outputs.update == 'true' }}
+        env:
+          IBC_LATEST: ${{ steps.ibc_version.outputs.IBC_LATEST }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          latest=${{ steps.ibc_version.outputs.IBC_LATEST }}
-          prefix=${{ env.BRANCH_PREFIX }}
-          search=${prefix}-${latest}
+          latest="$IBC_LATEST"
+          prefix="$BRANCH_PREFIX"
+          search="${prefix}-${latest}"
 
           # Check if branch exists
           if [ "$(git branch -r --list | grep origin/${search})" ]; then
@@ -80,10 +89,12 @@ jobs:
         if: ${{ steps.verify_branch.outputs.BRANCH_EXISTS == 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_IBC: ${{ steps.version.outputs.CURRENT_IBC }}
+          IBC_LATEST: ${{ steps.ibc_version.outputs.IBC_LATEST }}
         run: |
-          ver=${{ steps.version.outputs.CURRENT_IBC }}
-          latest=${{ steps.ibc_version.outputs.IBC_LATEST}}
-          prefix=${{ env.BRANCH_PREFIX }}
+          ver="$CURRENT_IBC"
+          latest="$IBC_LATEST"
+          prefix="$BRANCH_PREFIX"
           branch="${prefix}-${latest}"
           git config user.name github-actions
           git config user.email github-actions@github.com
@@ -97,6 +108,18 @@ jobs:
           echo ".> updating Dockerfile.tws.template"
           sed -i "s/IBC_VERSION=${ver}/IBC_VERSION=${latest}/g" Dockerfile.tws.template
 
+          # IBC ships no checksum file, so Dockerfile.template pins the digest.
+          # It must move with IBC_VERSION or the next build fails verification.
+          echo ".> recomputing IBC_SHA256"
+          ibc_zip="IBCLinux-${latest}.zip"
+          curl -sSLf -o "$ibc_zip" \
+            "${IBC_REPO%.git}/releases/download/${latest}/${ibc_zip}"
+          new_sha="$(sha256sum "$ibc_zip" | cut -d ' ' -f 1)"
+          rm -f "$ibc_zip"
+          sed -i "s/^ARG IBC_SHA256=.*/ARG IBC_SHA256=${new_sha}/" Dockerfile.template
+          grep -q "^ARG IBC_SHA256=${new_sha}$" Dockerfile.template
+          echo ".> IBC_SHA256 set to ${new_sha}"
+
           git add Dockerfile.template Dockerfile.tws.template
           git commit -m "Update IBC from ${ver} to ${latest}"
           git push --set-upstream origin "$branch" --force
@@ -108,6 +131,8 @@ jobs:
     name: Call build workflow
     needs: detect-release
     if: needs.detect-release.outputs.update == 'true'
+    permissions:
+      contents: read
     strategy:
       matrix:
         channel: ['stable', 'latest']
