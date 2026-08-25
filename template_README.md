@@ -637,8 +637,9 @@ The aarch64 image installs Interactive Brokers' own `arm` installer, so a
 channel can only publish `linux/arm64` for a version whose
 [release](https://github.com/dennisdeh/ib-gateway-docker/releases) carries the
 `ibgateway-<version>-standalone-linux-arm.sh` asset. Releases from
-`stable@10.45.1h` and `latest@10.47.1e` onward do; a few older ones are x64
-only, and for those the image is published for `linux/amd64` alone.
+`stable@10.45.1h` and `latest@10.47.1e` onward all carry it, and both published
+channels are on such a version, so both are published for `linux/amd64` and
+`linux/arm64`. A handful of older releases are x64 only.
 
 ## IB Gateway installation files
 

@@ -112,14 +112,44 @@ expand_template() {
 	done
 }
 
+# The build used to download an aarch64 Zulu JRE and pass app_java_home to the
+# installer, which does not honour it - so the JRE was fetched, verified,
+# shipped and never used. The installer supplies its own; see OPEN_ITEMS #17.
+# Matches the download's identifiers, not the word "zulu", which legitimately
+# appears in comments and in the JRE path the installer records.
 @test "build: no separate JRE is downloaded any more" {
-	local channel
+	local channel marker
 	for channel in $CHANNELS; do
-		run grep -in 'zulu\|app_java_home' "${ROOT}/${channel}/Dockerfile"
-		[ "$status" -ne 0 ] || {
-			echo "${channel}/Dockerfile still fetches a JRE the installer ignores: $output"
-			return 1
-		}
+		for marker in 'cdn\.azul\.com' 'ZULU_SHA256' 'ZULU_URL' 'ZULU_NAME' 'app_java_home'; do
+			run grep -nE "$marker" "${ROOT}/${channel}/Dockerfile"
+			[ "$status" -ne 0 ] || {
+				echo "${channel}/Dockerfile still fetches a JRE the installer ignores ($marker): $output"
+				return 1
+			}
+		done
+	done
+}
+
+# Both Dockerfiles must prove a JVM survived into the runtime stage. Where the
+# installer leaves it varies by version and architecture - latest@10.48.1e keeps
+# one inside the install directory, stable@10.45.1j only under /usr/local - so a
+# missing copy breaks one channel and not the other. See DECISIONS.md #18.
+@test "build: the runtime stage proves it has a JVM" {
+	local channel f
+	for channel in $CHANNELS; do
+		for f in Dockerfile Dockerfile.tws; do
+			run grep -qF 'COPY --from=setup /usr/local/ /usr/local/' "${ROOT}/${channel}/${f}"
+			[ "$status" -eq 0 ] || {
+				echo "${channel}/${f} does not copy /usr/local, which carries the JRE"
+				return 1
+			}
+			# shellcheck disable=SC2016  # literal Dockerfile text, not a shell expansion
+			run grep -qF '"${java_bin}" -version' "${ROOT}/${channel}/${f}"
+			[ "$status" -eq 0 ] || {
+				echo "${channel}/${f} does not check that a JVM is present"
+				return 1
+			}
+		done
 	done
 }
 

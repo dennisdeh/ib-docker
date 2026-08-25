@@ -53,11 +53,18 @@ RUN \
   rm -rf /var/lib/apt/lists/* # end
 
 # Copy files
+# /usr/local carries the JRE - see the same copy in Dockerfile and
+# docs/DECISIONS.md. Without it the launcher points at a JVM that is not here.
+COPY --from=setup /usr/local/ /usr/local/
 COPY --chown=abc:abc --from=setup /home/ibgateway/Jts ${TWS_PATH}
 COPY --chown=abc:abc --from=setup /home/ibgateway/ibc ${IBC_PATH}
 COPY ./tws-scripts/start_session.sh /custom-services.d/start_session.sh
 COPY ./tws-scripts/run_tws.sh ${SCRIPT_PATH}
 COPY ./scripts/* ${SCRIPT_PATH}
+
+# Fail the build if no JVM survived the copies above - see Dockerfile.
+RUN java_bin="$(find /usr/local/i4j_jres ${TWS_PATH} -name java -type f -print -quit 2>/dev/null || true)" && \
+  [ -n "${java_bin}" ] && "${java_bin}" -version
 
 # labels
 LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-gateway-docker

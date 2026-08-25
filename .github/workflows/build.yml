@@ -20,12 +20,11 @@ env:
   # Job-local registry. Dies with the job.
   CI_GATEWAY_IMAGE: localhost:5000/ib-gateway
   CI_GATEWAY_TAG: ci
-  # A channel can only build linux/arm64 for a version whose GitHub release
-  # carries the arm installer. stable is pinned to a version that predates
-  # those and has the x64 asset only, so building arm64 for it would fail on a
-  # 404, not on anything this repository can fix. Delete the condition - both
-  # here and in publish.yml - when stable is bumped. See docs/OPEN_ITEMS.md #18.
-  PLATFORMS: ${{ inputs.channel == 'stable' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+  # Must stay identical to publish.yml's list, or CI passes and the release
+  # then fails. A channel can only build linux/arm64 for a version whose GitHub
+  # release carries the arm installer; both channels are on such a version as
+  # of 2026-08-25. See docs/OPEN_ITEMS.md #18.
+  PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   build:

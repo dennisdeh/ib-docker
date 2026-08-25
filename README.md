@@ -52,9 +52,9 @@ Images are provided for [IB gateway][1] and [TWS][2]. With the following tags:
 | Image| Channel  | IB Gateway Version  | IBC Version      | Docker Tags                                    |
 | --- | -------- | ------------------- | ---------------- | ---------------------------------------------- |
 | [ib-gateway][1] | `latest` | `10.48.1e` | `3.24.1` | `latest` `10.48` `10.48.1e` |
-| [ib-gateway][1] |`stable` | `10.45.1g` | `3.24.1` | `stable` `10.45` `10.45.1g` |
+| [ib-gateway][1] |`stable` | `10.45.1j` | `3.24.1` | `stable` `10.45` `10.45.1j` |
 | [tws-rdesktop][2] | `latest` | `10.48.1e` | `3.24.1` | `latest` `10.48` `10.48.1e` |
-| [tws-rdesktop][2] |`stable` | `10.45.1g` | `3.24.1` | `stable` `10.45` `10.45.1g` |
+| [tws-rdesktop][2] |`stable` | `10.45.1j` | `3.24.1` | `stable` `10.45` `10.45.1j` |
 
 All tags are available in the container repository for [ib-gateway][1] and
 [tws-rdesktop][2]. IB Gateway and TWS share the same version numbers and tags.
@@ -637,8 +637,9 @@ The aarch64 image installs Interactive Brokers' own `arm` installer, so a
 channel can only publish `linux/arm64` for a version whose
 [release](https://github.com/dennisdeh/ib-gateway-docker/releases) carries the
 `ibgateway-<version>-standalone-linux-arm.sh` asset. Releases from
-`stable@10.45.1h` and `latest@10.47.1e` onward do; a few older ones are x64
-only, and for those the image is published for `linux/amd64` alone.
+`stable@10.45.1h` and `latest@10.47.1e` onward all carry it, and both published
+channels are on such a version, so both are published for `linux/amd64` and
+`linux/arm64`. A handful of older releases are x64 only.
 
 ## IB Gateway installation files
 

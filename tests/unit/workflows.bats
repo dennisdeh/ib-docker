@@ -63,19 +63,31 @@ setup() {
 	}
 }
 
-# A channel can only build linux/arm64 for a version whose release carries the
-# arm installer, and build.yml and publish.yml must agree on which channels
-# those are - otherwise CI passes and the release then fails on a 404.
+# build.yml and publish.yml must build the same platforms, or CI passes and the
+# release then fails on whatever the extra platform cannot do. A channel can
+# only build linux/arm64 for a version whose release carries the arm installer.
 # See docs/OPEN_ITEMS.md #18.
-@test "workflows: build and publish agree on which channels build arm64" {
-	local build_restricts publish_restricts
-	build_restricts="$(grep -c "inputs.channel == 'stable' && 'linux/amd64'" "${WORKFLOWS}/build.yml" || true)"
-	publish_restricts="$(grep -c 'platforms=linux/amd64"' "${WORKFLOWS}/publish.yml" || true)"
-	[ "$build_restricts" -eq "$publish_restricts" ] || {
-		echo "build.yml and publish.yml disagree on the arm64 channel restriction"
-		echo "build.yml: $build_restricts  publish.yml: $publish_restricts"
+@test "workflows: build and publish declare the same platforms, including arm64" {
+	local build_p publish_p
+	build_p="$(sed -n 's/^  PLATFORMS: //p' "${WORKFLOWS}/build.yml")"
+	publish_p="$(sed -n 's/^  PLATFORMS: //p' "${WORKFLOWS}/publish.yml")"
+	[ -n "$build_p" ] || {
+		echo "build.yml declares no PLATFORMS"
 		return 1
 	}
+	[ "$build_p" = "$publish_p" ] || {
+		echo "build.yml and publish.yml disagree on platforms"
+		echo "build.yml:   $build_p"
+		echo "publish.yml: $publish_p"
+		return 1
+	}
+	case "$build_p" in
+	*linux/arm64*) ;;
+	*)
+		echo "linux/arm64 is no longer built: $build_p"
+		return 1
+		;;
+	esac
 }
 
 @test "workflows: no build step hard-codes its platform list" {

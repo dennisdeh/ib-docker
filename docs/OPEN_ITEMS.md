@@ -263,20 +263,27 @@ if there ever was one, is not identifiable from the run history.
 **The fix** is to install the architecture's own installer —
 `…-standalone-linux-arm.sh` on `aarch64`, `…-x64.sh` elsewhere. IB publishes
 both and `detect-releases.yml` already attaches both to each release
-(`archs="x64 arm"`). The Zulu download, `ZULU_SHA256` and the
-`COPY --from=setup /usr/local/` that existed only to carry it are removed.
+(`archs="x64 arm"`). The Zulu download and `ZULU_SHA256` are removed with it.
+
+`COPY --from=setup /usr/local/` was removed at the same time and **that was a
+mistake** — it does not carry Zulu, it carries the JVM the IB installer unpacks
+to `/usr/local/i4j_jres`. Two JVM-less images were built before it was caught
+while bumping `stable`. It is restored, and both runtime stages now end with a
+`find … -name java` + `java -version` step so the build fails rather than
+shipping an image whose launcher points at a JVM that is not there. See
+`DECISIONS.md` #18.
 
 Verified 2026-08-25 by building `./latest` for `linux/arm64` under QEMU, before
 and after: before, `jre/bin/java: not found`; after, the installer runs to
 completion and the image builds.
 
-### 18. `stable` is pinned to a version that has no `arm` release asset — **OPEN (version decision)**
+### 18. `stable` was pinned to a version with no `arm` release asset — **FIXED**
 
 *Found 2026-08-25, while fixing #17.*
 
 The per-architecture download in #17 needs `…-standalone-linux-arm.sh` to exist
 in the channel's GitHub release. It does for `latest` (`10.48.1e`, HTTP 200) but
-**not** for `stable` (`10.45.1g`, HTTP 404) — that release carries only the x64
+**not** for `stable` as then pinned (`10.45.1g`, HTTP 404) — that release carries only the x64
 installer and its `.sha256`. So `stable` cannot build `linux/arm64` at any
 version it is currently pinned to, and its `arm64` leg fails on a missing file
 rather than on a broken JRE.
@@ -286,19 +293,23 @@ architectures, and every `stable` release from `10.45.1h` onward has the `arm`
 asset. `stable` is four releases behind because the bot's
 `update-stable-to-10.45.1j` branch (opened 2026-08-06) has never been merged.
 
-**Handled without a version bump, 2026-08-25.** Which platforms a channel builds
-is now derived from the channel rather than hard-coded: `PLATFORMS` in
-`build.yml` and the `platforms` output of the `Extract release channel` step in
-`publish.yml` give `stable` `linux/amd64` only. CI and a release therefore both
-pass, and nothing about the contents of the published `stable` image changes —
-its `linux/arm64` build has never once succeeded, so no working artefact is
-lost. `tests/unit/workflows.bats` pins the two workflows to the same rule.
+**Resolved by bumping `stable`, on the owner's instruction, 2026-08-25.**
+`./update.sh stable 10.45.1j` — that release carries both installers and both
+`.sha256` files (probed the same day: `arm` and `arm.sha256` HTTP 200). `stable`
+therefore builds `linux/arm64` again, and the interim restriction that had
+limited it to `linux/amd64` is gone from both workflows.
 
-**The version decision is still the owner's.** Bumping `stable` to `10.45.1j`
-(the bot's `update-stable-to-10.45.1j` branch, opened 2026-08-06 and never
-merged) restores `linux/arm64` for `stable`; deleting the `stable` condition in
-both workflows is then the whole of the code change. Until that happens,
-`stable` is `linux/amd64` only, and this item stays open to say so.
+`PLATFORMS` is now a plain `linux/amd64,linux/arm64` declared once in
+`build.yml` and once in `publish.yml`. The two must stay identical — if they
+drift, CI passes and the release then fails on the platform only one of them
+builds — and `tests/unit/workflows.bats` fails both on a mismatch and on
+`linux/arm64` being dropped altogether.
+
+This also moved `stable` four releases forward, from `10.45.1g`. The bot's
+`update-stable-to-10.45.1j` branch (opened 2026-08-06, never merged) is now
+redundant; its PR can be closed. `detect-releases.yml` will not reopen one,
+because it keys off the existence of the `ibgateway-stable@10.45.1j` release,
+which already exists.
 
 ## Low / accepted risk (record the decision if you accept it)
 

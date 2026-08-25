@@ -117,7 +117,7 @@ feature, not a bug.
   `latest/`/`stable/` is expected, not a defect — do not "fix" it by running
   `update.sh` unless a version bump is what you were actually asked for. Both
   channels were last regenerated on 2026-08-25 and all three then read `3.24.1`
-  (gateway `10.48.1e` latest, `10.45.1g` stable).
+  (gateway `10.48.1e` latest, `10.45.1j` stable).
 - **One compose file, two applications.** `docker-compose.yml` holds an
   `ib-gateway` service and a `tws` service behind Compose profiles of the same
   name; `IB_APP` in `.env` feeds `COMPOSE_PROFILES` and decides which one is
@@ -359,12 +359,13 @@ trusting it — see *Debugging*.
   `…-standalone-linux-arm.sh` on aarch64 and `…-x64.sh` elsewhere, so a channel
   pinned to a version whose GitHub release carries only the x64 asset cannot
   build `linux/arm64` at all. `detect-releases.yml` uploads both
-  (`archs="x64 arm"`); older releases may not have them. **The platform list
-  follows from the channel, in two places that must agree** — `PLATFORMS` in
-  `build.yml` and the `platforms` output of `publish.yml`'s *Extract release
-  channel* step. As of 2026-08-25 `stable` (`10.45.1g`) is `linux/amd64` only
-  for this reason; `tests/unit/workflows.bats` fails if the two drift apart.
-  See `docs/OPEN_ITEMS.md` #18 before changing either.
+  (`archs="x64 arm"`); a few releases from before that change carry the x64
+  asset only. **`PLATFORMS` is declared twice and the two must agree** — in
+  `build.yml` and in `publish.yml`. If they drift, CI passes and the release
+  then fails on the platform only one of them builds;
+  `tests/unit/workflows.bats` fails on that, and on `linux/arm64` being dropped.
+  Both channels are on versions that have the arm asset as of 2026-08-25
+  (`10.48.1e` latest, `10.45.1j` stable). See `docs/OPEN_ITEMS.md` #18.
 
 ---
 

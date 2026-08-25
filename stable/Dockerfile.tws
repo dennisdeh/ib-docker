@@ -12,7 +12,7 @@
 # image it has just built instead of at ghcr.io, which is not anonymously
 # pullable. See docs/DECISIONS.md.
 ARG IB_GATEWAY_BASE_IMAGE=ghcr.io/dennisdeh/ib-gateway
-ARG IB_VERSION=10.45.1g
+ARG IB_VERSION=10.45.1j
 FROM ${IB_GATEWAY_BASE_IMAGE}:${IB_VERSION} AS setup
 
 WORKDIR /
@@ -23,7 +23,7 @@ WORKDIR /
 
 FROM lscr.io/linuxserver/rdesktop:ubuntu-xfce
 
-ENV IB_GATEWAY_VERSION=10.45.1g
+ENV IB_GATEWAY_VERSION=10.45.1j
 ENV IB_GATEWAY_RELEASE_CHANNEL=stable
 ENV IBC_VERSION=3.24.1
 
@@ -53,11 +53,18 @@ RUN \
   rm -rf /var/lib/apt/lists/* # end
 
 # Copy files
+# /usr/local carries the JRE - see the same copy in Dockerfile and
+# docs/DECISIONS.md. Without it the launcher points at a JVM that is not here.
+COPY --from=setup /usr/local/ /usr/local/
 COPY --chown=abc:abc --from=setup /home/ibgateway/Jts ${TWS_PATH}
 COPY --chown=abc:abc --from=setup /home/ibgateway/ibc ${IBC_PATH}
 COPY ./tws-scripts/start_session.sh /custom-services.d/start_session.sh
 COPY ./tws-scripts/run_tws.sh ${SCRIPT_PATH}
 COPY ./scripts/* ${SCRIPT_PATH}
+
+# Fail the build if no JVM survived the copies above - see Dockerfile.
+RUN java_bin="$(find /usr/local/i4j_jres ${TWS_PATH} -name java -type f -print -quit 2>/dev/null || true)" && \
+  [ -n "${java_bin}" ] && "${java_bin}" -version
 
 # labels
 LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-gateway-docker

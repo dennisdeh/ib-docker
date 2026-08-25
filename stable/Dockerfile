@@ -8,7 +8,7 @@
 # hadolint global ignore=DL3008,DL4006
 FROM ubuntu:24.04 AS setup
 
-ENV IB_GATEWAY_VERSION=10.45.1g
+ENV IB_GATEWAY_VERSION=10.45.1j
 ENV IB_GATEWAY_CHANNEL=stable
 ENV IBC_VERSION=3.24.1
 ARG DEBIAN_FRONTEND=noninteractive
@@ -26,8 +26,9 @@ WORKDIR /tmp/setup
 
 # Prepare system
 #
-# IB ships one installer per architecture and each carries its own bundled JRE,
-# so the x64 one cannot install on aarch64 - see docs/DECISIONS.md.
+# IB ships one installer per architecture, each carrying a JRE built for that
+# architecture, so the x64 one cannot install on aarch64 - it unpacks an x86-64
+# java and dies. Where that JRE lands varies by version; see docs/DECISIONS.md.
 # `-f` matters: without it a 404 is saved as an HTML page and the failure
 # surfaces later as an unreadable checksum mismatch.
 RUN apt-get update -y && \
@@ -65,7 +66,7 @@ COPY ./scripts /root/scripts
 
 FROM ubuntu:24.04
 
-ENV IB_GATEWAY_VERSION=10.45.1g
+ENV IB_GATEWAY_VERSION=10.45.1j
 # IB Gateway user constants
 ARG USER_ID="${USER_ID:-1000}"
 ARG USER_GID="${USER_GID:-1000}"
@@ -82,6 +83,11 @@ ENV SCRIPT_PATH=${HOME}/scripts
 ENV GATEWAY_OR_TWS=gateway
 ARG DEBIAN_FRONTEND=noninteractive
 # Copy files
+# /usr/local carries the JRE. The IB installer puts it in
+# /usr/local/i4j_jres/<id>/<version>-zulu and records that path in the install
+# directory's .install4j/pref_jre.cfg, so dropping this copy leaves a launcher
+# pointing at a JVM that is not in the image. See docs/DECISIONS.md.
+COPY --from=setup /usr/local/ /usr/local/
 COPY --chown=${USER_ID}:${USER_GID} --from=setup /root/ ${HOME}
 
 # Prepare system
@@ -99,6 +105,13 @@ RUN apt-get update -y && \
   echo "ibgateway ALL=(ALL) NOPASSWD:ALL" | tee -a /etc/sudoers && \
   chmod a+x ${SCRIPT_PATH}/*.sh && \
   mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
+# Fail the build if no JVM survived the copies above. IB puts the JRE either
+# under /usr/local/i4j_jres or inside the install directory, depending on the
+# version and the architecture, and a missing one is otherwise invisible until
+# the container starts and IBC cannot launch.
+RUN java_bin="$(find /usr/local/i4j_jres ${TWS_PATH} -name java -type f -print -quit 2>/dev/null || true)" && \
+  [ -n "${java_bin}" ] && "${java_bin}" -version
 
 USER ${USER_ID}:${USER_GID}
 WORKDIR ${HOME}
