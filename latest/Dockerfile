@@ -31,9 +31,20 @@ WORKDIR /tmp/setup
 # java and dies. Where that JRE lands varies by version; see docs/DECISIONS.md.
 # `-f` matters: without it a 404 is saved as an HTML page and the failure
 # surfaces later as an unreadable checksum mismatch.
-RUN apt-get update -y && \
-  apt-get install --no-install-recommends --yes \
-  curl ca-certificates unzip && \
+#
+# apt is retried because ports.ubuntu.com - the aarch64 mirror, and only it -
+# intermittently serves an index referencing a .deb its pool 404s on, which
+# fails the emulated leg with apt's exit 100. A fresh `apt-get update` on the
+# next attempt re-resolves, usually against a different mirror node. See
+# docs/OPEN_ITEMS.md #19.
+RUN for attempt in 1 2 3; do \
+    apt-get update -y && \
+    apt-get install --no-install-recommends --yes curl ca-certificates unzip && \
+    break; \
+    [ "$attempt" = 3 ] && exit 1; \
+    echo ".> apt failed, refreshing indices and retrying (attempt ${attempt})"; \
+    sleep 15; \
+  done && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* && \
 # Install IB Gateway
@@ -91,10 +102,16 @@ COPY --from=setup /usr/local/ /usr/local/
 COPY --chown=${USER_ID}:${USER_GID} --from=setup /root/ ${HOME}
 
 # Prepare system
-RUN apt-get update -y && \
-  apt-get upgrade -y && \
-  apt-get install --no-install-recommends --yes \
-  gettext-base socat xvfb x11vnc sshpass openssh-client sudo telnet && \
+RUN for attempt in 1 2 3; do \
+    apt-get update -y && \
+    apt-get upgrade -y && \
+    apt-get install --no-install-recommends --yes \
+    gettext-base socat xvfb x11vnc sshpass openssh-client sudo telnet && \
+    break; \
+    [ "$attempt" = 3 ] && exit 1; \
+    echo ".> apt failed, refreshing indices and retrying (attempt ${attempt})"; \
+    sleep 15; \
+  done && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* && \
   if id ubuntu; then \

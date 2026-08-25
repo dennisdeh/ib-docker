@@ -311,34 +311,44 @@ redundant; its PR can be closed. `detect-releases.yml` will not reopen one,
 because it keys off the existence of the `ibgateway-stable@10.45.1j` release,
 which already exists.
 
-### 19. The `linux/arm64` leg fails intermittently in `apt-get`, before the build proper — OPEN
+### 19. `apt-get` fails on the `linux/arm64` leg when Ubuntu is mid-publication — **MITIGATED**
 
-*Observed 2026-08-25 on the first CI run of `worktree-decouple-upstream-fix-ci`.*
+*Diagnosed 2026-08-25, from a local reproduction and the CI log of run
+`32901651857`, which agree exactly — same package, same mirror node.*
 
-The `stable` job failed in the setup `RUN` with **exit code 100**, 22 seconds
-into the build step, while the `latest` job was still building normally at 1:19
-and was cancelled by `fail-fast`.
+```text
+Ign:1 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libssl3t64 3.0.13-0ubuntu3.15
+Err:1 ... 404  Not Found [IP: 91.189.92.20 80]
+E: Failed to fetch .../libssl3t64_3.0.13-0ubuntu3.15_arm64.deb  404  Not Found
+E: Unable to fetch some archives
+```
 
-**Exit 100 is `apt-get`'s, and 22 seconds is too early to have reached
-anything else** — not the installer download, not `sha256sum --check`, not the
-IB installer, not the JVM check. It is `apt-get update`/`install` failing
-against `ports.ubuntu.com` under QEMU: a runner or mirror blip.
+Canonical had published `libssl3t64 3.0.13-0ubuntu3.15` into the `noble-updates`
+**index** before the `arm64` **pool** carried it. `apt-get upgrade` resolved to
+that version and got a 404; apt exits **100**. The `amd64` leg installed the
+same version from `archive.ubuntu.com` seconds earlier in the same build, which
+is why only the emulated leg died.
 
-This matters because a red `arm64` leg now has three quite different causes, and
-the exit code and elapsed time tell them apart at a glance:
+Nothing in this repository causes it and nothing here can prevent it — it breaks
+any build of this tree, `master` included, during the publication window. The
+window closed on its own: a rebuild of the identical tree a short while later
+fetched the package with no error and no retry.
+
+**Mitigation, not a cure.** Each `apt-get` block in `Dockerfile.template` and
+`Dockerfile.tws.template` now retries up to three times, running `apt-get
+update` again between attempts so the index is re-read and DNS re-resolves,
+usually onto a different mirror node, and `exit 1` if all three fail rather than
+falling out of the loop silently. A sustained pool outage will still fail the
+build, correctly.
+
+**Reading a red `arm64` leg.** Three quite different causes, told apart by the
+exit code and how far it got:
 
 | symptom | cause |
 |---|---|
-| exit 255, `jre/bin/java: not found` | the x64-installer-on-aarch64 bug — **fixed**, see #17 |
-| exit 1 at the `java -version` step | a JVM did not survive into the runtime stage, see #18 and `DECISIONS.md` #18 |
-| exit 100 within ~30 s, in `apt-get` | transient; re-run the job |
-
-Retry before investigating. The same `stable`/`linux/arm64` build from the same
-tree completed locally under QEMU on 2026-08-25, reporting Zulu `17.0.17`.
-
-If this becomes frequent rather than occasional, the fix is a retry around the
-`apt-get` step, not `continue-on-error` on the job — see #1 for why that is
-never the answer here.
+| exit 255, `jre/bin/java: not found` | the x64-installer-on-aarch64 bug — fixed, see #17 |
+| exit 1 at the `java -version` step | no JVM survived into the runtime stage, see #18 and `DECISIONS.md` #18 |
+| exit 100, `404 Not Found` from `ports.ubuntu.com` | this item; retry, and if it persists check whether Ubuntu is mid-publication |
 
 ## Low / accepted risk (record the decision if you accept it)
 
