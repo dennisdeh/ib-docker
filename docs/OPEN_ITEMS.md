@@ -248,8 +248,16 @@ on `10.45.1g` with #10 (`10.45.1i`) and #14 (`10.45.1j`) waiting; `latest` is on
 to a release that has both arches and turns its arm64 leg green. That is a
 version bump, so it is the maintainer's call, not a CI repair.
 
-`latest` is unaffected: `ibgateway-latest@10.48.1e` (2026-07-14) has both
-arches. Both amd64 legs are unaffected.
+`latest` is unaffected and is the proof the code is right:
+`ibgateway-latest@10.48.1e` (2026-07-14) has both arches, and
+**`Build image (latest)` passed in full** on 2026-08-25 (run 32845019460, job
+97792655646) — gateway `linux/amd64,linux/arm64` in 8m28s, then TWS in 14m21s,
+the first time the TWS leg has ever passed here. Both amd64 legs are
+unaffected.
+
+With `curl --fail` in place the `stable` failure now names itself —
+`curl: (22) The requested URL returned error: 404` — instead of the checksum
+message quoted above.
 
 `detect-releases.yml` still gained a *Backfill installers missing from the
 existing release* step, but its scope is narrower than it first appeared: it
