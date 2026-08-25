@@ -58,7 +58,10 @@ docker compose config   # validates .env + compose wiring without starting anyth
   `python3 -m venv .venv && .venv/bin/pip install pre-commit`. **There is no
   `gh` — never plan a step around it.** PRs are opened in the browser, or the
   bot opens them from CI.
-- The remote is `origin` → `https://github.com/dennisdeh/ib-gateway-docker.git`.
+- The remote is `origin` → `git@github.com:dennisdeh/ib-gateway-docker.git`.
+  It was HTTPS until 2026-08-25; over HTTPS every push prompted for a username
+  and failed in a non-interactive session. The machine's SSH key already
+  authenticates to GitHub as `dennisdeh`, so pushes need no token and no `gh`.
   Upstream (`gnzsnz`) is **not** configured as a remote; add it explicitly if a
   sync is requested.
 
