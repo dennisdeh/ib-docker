@@ -1,4 +1,10 @@
-/.env
+# Environment files: no real .env variant is ever tracked.
+# .env-dist is the tracked template that records the key names.
+.env
+.env.*
+*.env
+!.env-dist
+!*.env-dist
 tws_settings/
 ssh/
 /config/

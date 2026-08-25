@@ -1,5 +1,11 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+#
+# The shell and Dockerfile linters deliberately use their *-docker variants:
+# they then need only Docker, which every contributor already has to build the
+# images, instead of shellcheck/shfmt/hadolint binaries installed on the host.
+# The same `pre-commit run --all-files` therefore works locally and in CI
+# (.github/workflows/lint.yml).
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.6.0
@@ -10,20 +16,34 @@ repos:
   - id: check-added-large-files
   - id: check-shebang-scripts-are-executable
   - id: check-executables-have-shebangs
-- repo: https://github.com/jumanjihouse/pre-commit-hooks
-  rev: 3.0.0
+  - id: detect-private-key
+- repo: https://github.com/koalaman/shellcheck-precommit
+  rev: v0.10.0
   hooks:
   - id: shellcheck
-  - id: shfmt
+- repo: https://github.com/scop/pre-commit-shfmt
+  rev: v3.12.0-1
+  hooks:
+  - id: shfmt-docker
 - repo: https://github.com/hadolint/hadolint
   rev: v2.12.1-beta
   hooks:
-  - id: hadolint
+  - id: hadolint-docker
 - repo: https://github.com/igorshubovych/markdownlint-cli
   rev: v0.39.0
   hooks:
   - id: markdownlint
 - repo: https://github.com/wemake-services/dotenv-linter
-  rev: 0.5.0 # Use the ref you want to point at
+  rev: 0.9.0
   hooks:
   - id: dotenv-linter
+- repo: local
+  hooks:
+  - id: no-real-env-files
+    name: refuse to commit real environment files
+    language: fail
+    entry: >-
+      This file holds real credentials and must never be committed.
+      Only .env-dist is tracked; it records the key names. See CLAUDE.md.
+    files: '(^|/)\.env($|\.)|(^|/)[^/]*\.env$'
+    exclude: '(^|/)[^/]*\.env-dist$'

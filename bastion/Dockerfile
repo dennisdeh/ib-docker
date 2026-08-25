@@ -35,6 +35,9 @@ COPY entrypoint.sh /
 COPY provision.sh /
 COPY bastion_banner.txt /
 
+# The healthcheck needs bash's /dev/tcp redirection, which JSON exec form
+# cannot express, so DL3025 does not apply here.
+# hadolint ignore=DL3025
 HEALTHCHECK --interval=30m --timeout=15s --start-period=10s \
   CMD timeout 1 bash -c '</dev/tcp/0.0.0.0/22 && echo "SSH Bastion running" || echo "Port is closed"' || echo "Connection timeout"
 

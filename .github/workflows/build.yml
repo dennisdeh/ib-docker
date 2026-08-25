@@ -15,7 +15,13 @@ jobs:
     name: Build ibgateway & TWS
 
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # NOTE: do not reintroduce `continue-on-error` here. It made this job report
+    # success whatever the build did, so the PR check and the README badge were
+    # green by construction. If one platform leg is genuinely flaky, scope the
+    # tolerance to that leg - never to the whole job.
+    timeout-minutes: 360
+    permissions:
+      contents: read
 
     steps:
 

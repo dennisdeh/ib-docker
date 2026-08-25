@@ -1,4 +1,5 @@
 # SSH Bastion
+
 Fork of the [docker-bastion](https://github.com/gnzsnz/docker-bastion) project.
 
 Dockerized SSH bastion :japanese_castle:, with hardened defaults. An SSH bastion is a jump server accessible from the Internet that gives access to services in a private network. Once a bastion is in place you can access private network services through it.
@@ -18,8 +19,8 @@ Features:
 
 Follow the steps below to have a running SSH bastion:
 
-- Create a [docker-compose.yml](https://github.com/dennisdeh/docker-bastion/blob/master/docker-compose.yml-dist) file. See [example](#Run-the-container) below
-- Create an [.env](https://github.com/dennisdeh/docker-bastion/blob/master/.env-dist) file. See available [options](#setup).
+- Create a [docker-compose.yml](https://github.com/dennisdeh/docker-bastion/blob/master/docker-compose.yml-dist) file. See [example](#run-the-container) below
+- Create an [.env](https://github.com/dennisdeh/docker-bastion/blob/master/.env-dist) file. See available [options](#environment-variables).
 - Copy `authorized_keys` file in `data` folder. We will create two users and asume they already have authorized keys in `/home/user_name/.ssh/autorized_keys`
 
 ```bash
@@ -29,6 +30,7 @@ mkdir $PWD/data/home/{$USERS}/.ssh
 # example to copy authorized_keys file
 cp /home/{$USERS}/.ssh/authorized_keys $PWD/data/home/{$USERS}/.ssh
 ```
+
 - Provision the `data` folder. This is required to create the folder structure required by SSH bastion. See more details on [provisioning](#provision)
 
 - We are ready to go
@@ -69,12 +71,16 @@ docker compose up -d && docker compose logs -ft
 
 Below you will find the available [environment variables](#environment-variables), how to [build](#build-the-image) the image, more details on the [provisioning](#provision) process, running a [bastion container](#run-the-container), managing [user access](#user-access), how to setup your [ssh clinets](#client-setup), the many [use cases](#ssh-bastion-use-cases) for an SSH bastion, [multi-factor](#setting-mfatotp-optional) authentication or MFA/TOTP and certificate authorities [CA](#use-a-certificate-authority). Enjoy the reading.
 
-### Set up with the ib-gateway:
+### Set up with the ib-gateway
+
 1. First generate an ssh key pair for the ibgateway user (from the ib-gateway container, same vnet):
+
 ```bash
 base="$PWD/id_ed25519"; file="$base"; i=1; while [ -e "$file" ] || [ -e "$file.pub" ]; do file="${base}_$i"; i=$((i+1)); done; ssh-keygen -t ed25519 -a 100 -N "" -f "$file"
 ```
-2. Run the provisioning
+
+1. Run the provisioning
+
 ```bash
 sudo rm -rf data/etc data/home          # remove the bogus auto-created dirs
 mkdir -p data/home/ibgateway/.ssh
@@ -82,25 +88,34 @@ cp <ibgateway_pubkey>.pub data/home/ibgateway/.ssh/authorized_keys
 docker run -it --rm -e USERS=ibgateway --env-file .env \
   -v "$PWD/data:/data" dennisdeh/bastion:local-resolute /provision.sh
 ```
-3. Generate the ssh key pair for the other user (the remote client) and copy it from the repository root to the data folder:
+
+1. Generate the ssh key pair for the other user (the remote client) and copy it from the repository root to the data folder:
+
 ```bash
 base="$PWD/id_ed25519"; file="$base"; i=1; while [ -e "$file" ] || [ -e "$file.pub" ]; do file="${base}_$i"; i=$((i+1)); done; ssh-keygen -t ed25519 -a 100 -N "" -f "$file"
 ```
+
 ```bash
 mkdir -p data/home/deh/.ssh
 sudo install -d -m 700 data/home/deh/.ssh  # if there are problems
 cp id_ed25519.pub data/home/deh/.ssh/authorized_keys
 ```
-4. Run the provisioning for both users
+
+1. Run the provisioning for both users
+
 ```bash
 docker run -it --rm -e USERS=deh,ibgateway --env-file .env \
   -v "$PWD/data:/data" dennisdeh/bastion:local-resolute /provision.sh
 ```
-5. Verify that both users are created for the bastion
+
+1. Verify that both users are created for the bastion
+
 ```bash
 grep -E 'deh|ibgateway' data/etc/group
 ```
-6. Move the private key to ~/.ssh. Then try to ssh into the bastion
+
+1. Move the private key to ~/.ssh. Then try to ssh into the bastion
+
 ```bash
 ssh -i ~/.ssh/id_ed25519_remote -p 22222 -N \
     -L 4002:localhost:4002 \
@@ -108,6 +123,7 @@ ssh -i ~/.ssh/id_ed25519_remote -p 22222 -N \
 ```
 
 Install a different key
+
 ```bash
 cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-gateway-docker"
 sudo cp ~/.ssh/id_ed25519.pub data/home/deh/.ssh/authorized_keys
@@ -124,7 +140,7 @@ The following variables are available in the .env file
 
 | Variable | default | Description |
 | --- | --- | --- |
-| APT_PROXY | blank | Defines an optional APT_PROXY to speed up image build. format -> http://aptproxy:3142. You can try [apt-cacher-ng](https://github.com/dennisdeh/apt-cacher-ng) |
+| APT_PROXY | blank | Defines an optional APT_PROXY to speed up image build. format -> <http://aptproxy:3142>. You can try [apt-cacher-ng](https://github.com/dennisdeh/apt-cacher-ng) |
 | SSH_LISTEN_PORT | 22222 | host external published port |
 | USERS | bastion | Coma separated list of users, ex USERS=bastion,devops. Provisioning script will create users defined in this variable |
 | USER_SHELL | /usr/sbin/nologin | mandatory, required to set user shell |
@@ -135,7 +151,7 @@ The following variables are available in the .env file
 | CA_ENABLED | 'no' | set to 'yes' to enable SSH CA mode |
 | SSHD_HOST_CERT | '/etc/ssh/ssh_host_ed25519_key-cert.pub' | CA signed host certificate. You will need to copy it into ./data/etc/ssh directory |
 | SSHD_USER_CA | '/etc/ssh/user_ca.pub' | public CA key. You will need to copy it into ./data/etc/ssh directory |
-| IMAGE_VERSION |  | Used during build to tag the image. |
+| IMAGE_VERSION | | Used during build to tag the image. |
 | BASE_VERSION | jammy | Ubuntu base image. Used during build. |
 
 After you have set your .env file check that the configuration is correct.
@@ -340,7 +356,7 @@ See next section with examples for [client setup](#client-setup).
 
 A special case that might deserver additional attention is as a *sidecar container* for port forwarding
 
-```
+```text
              >|<   _____________
 __________    |    | Bastion   |
 | Client | ---|--- | Container | ----\
@@ -364,7 +380,7 @@ In this scenario, we don't need to install an sshd server in the app container j
 
 You can setup your `~/.ssh/config` file to simplify your client commands
 
-```
+```text
 ### The Bastion Host
 Host bastion-host-nickname
   HostName bastion-hostname
@@ -469,13 +485,13 @@ You will probably want to pair SSH bastion with fail2ban or a fail2ban container
   - [ssh-keygen](https://manpages.ubuntu.com/manpages/jammy/en/man1/ssh-keygen.1.html)
 
 - Other bastion containers
-  - https://github.com/panubo/docker-sshd/
-  - https://github.com/binlab/docker-bastion/
-  - https://github.com/fphammerle/docker-ssh-bastion/
+  - <https://github.com/panubo/docker-sshd/>
+  - <https://github.com/binlab/docker-bastion/>
+  - <https://github.com/fphammerle/docker-ssh-bastion/>
 
 - SSH hardening
-  - https://infosec.mozilla.org/guidelines/openssh
-  - https://www.ssh-audit.com/hardening_guides.html#ubuntu_20_04_lts
-  - https://goteleport.com/blog/ssh-bastion-host/
-  - https://goteleport.com/blog/security-hardening-ssh-bastion-best-practices/
-  - https://news.ycombinator.com/item?id=29924053
+  - <https://infosec.mozilla.org/guidelines/openssh>
+  - <https://www.ssh-audit.com/hardening_guides.html#ubuntu_20_04_lts>
+  - <https://goteleport.com/blog/ssh-bastion-host/>
+  - <https://goteleport.com/blog/security-hardening-ssh-bastion-best-practices/>
+  - <https://news.ycombinator.com/item?id=29924053>

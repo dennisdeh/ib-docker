@@ -1,0 +1,12 @@
+# markdownlint configuration
+#
+# MD013 (line-length) is disabled deliberately: README.md is generated from
+# template_README.md by envsubst in .github/workflows/detect-releases.yml, and
+# most long lines are option tables whose width is set by their content. Wrapping
+# them is not possible without breaking the tables, and the generator would undo
+# any manual reflow at the next release. See docs/DECISIONS.md.
+MD013: false
+
+# The logo in template_README.md is an <img> tag because it needs an explicit
+# height; CommonMark image syntax cannot express that.
+MD033: false
