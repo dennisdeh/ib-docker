@@ -10,7 +10,7 @@ FROM ubuntu:24.04 AS setup
 
 ENV IB_GATEWAY_VERSION=10.45.1g
 ENV IB_GATEWAY_CHANNEL=stable
-ENV IBC_VERSION=3.23.0
+ENV IBC_VERSION=3.24.1
 ARG DEBIAN_FRONTEND=noninteractive
 ARG IB_GATEWAY_FILE="ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh"
 ARG IB_GATEWAY_REPO="https://github.com/dennisdeh/ib-gateway-docker"
@@ -18,9 +18,16 @@ ARG IB_GATEWAY_URL="${IB_GATEWAY_REPO}/releases/download/ibgateway-${IB_GATEWAY_
 ARG IBC_FILE="IBCLinux-${IBC_VERSION}.zip"
 ARG IBC_REPO="https://github.com/IbcAlpha/IBC"
 ARG IBC_URL="${IBC_REPO}/releases/download/${IBC_VERSION}/${IBC_FILE}"
+# IBC publishes no checksum file, so the digest is pinned here and MUST be
+# updated with IBC_VERSION. .github/workflows/detect-ibc-release.yml recomputes
+# it when it opens a version-bump PR. Measured 2026-08-25 for 3.24.1.
+ARG IBC_SHA256=d99ee28cc3539e3843fb00d28dc484c255006b0063d38f0808ac3ef07dd88bb8
 ARG ZULU_NAME=zulu17.60.17-ca-fx-jre17.0.16-linux_aarch64
 ARG ZULU_FILE=${ZULU_NAME}.tar.gz
 ARG ZULU_URL=https://cdn.azul.com/zulu/bin/${ZULU_FILE}
+# Azul publishes no checksum file either. Pinned for ZULU_NAME above; update
+# both together. Measured 2026-08-25.
+ARG ZULU_SHA256=e74bcc2df2cd070eb0325fe599a9c102e9728e7d266862048634bc1e7043b5d0
 
 WORKDIR /tmp/setup
 
@@ -31,8 +38,9 @@ RUN apt-get update -y && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* && \
   if [ "$(uname -m)" = "aarch64" ]; then \
-    curl -sSLO ${ZULU_URL} ; \
-    tar -xzf ${ZULU_FILE} -C /usr/local/ ; \
+    curl -sSLO ${ZULU_URL} && \
+    echo "${ZULU_SHA256}  ${ZULU_FILE}" | sha256sum --check - && \
+    tar -xzf ${ZULU_FILE} -C /usr/local/ && \
     ln -s /usr/local/${ZULU_NAME} /usr/local/zulu17 ; \
   fi && \
 # Install IB Gateway
@@ -49,6 +57,7 @@ RUN apt-get update -y && \
   fi && \
   # Install IBC
   curl -sSOL ${IBC_URL} && \
+  echo "${IBC_SHA256}  ${IBC_FILE}" | sha256sum --check - && \
   mkdir /root/ibc && \
   unzip ./${IBC_FILE} -d /root/ibc && \
   chmod -R u+x /root/ibc/*.sh && \

@@ -90,12 +90,14 @@ feature, not a bug.
   `$STABLE_VERSION`, `$IBC_VERSION`, …). **Edit `template_README.md`.** A change
   written into `README.md` survives until the next IB Gateway release, then
   vanishes without a trace.
-- **The IBC version legitimately differs between the templates and the channel
-  Dockerfiles.** `detect-ibc-release.yml` bumps `IBC_VERSION` in the two
+- **The IBC version can legitimately differ between the templates and the
+  channel Dockerfiles.** `detect-ibc-release.yml` bumps `IBC_VERSION` in the two
   templates only and deliberately does *not* run `update.sh`; the next gateway
-  release propagates it. As of 2026-08-25: templates `3.24.1`, `latest/`
-  `3.24.0`, `stable/` `3.23.0`. This is by design — do not "fix" it by running
-  `update.sh` unless a version bump is what you were actually asked for.
+  release propagates it. So a gap between `Dockerfile.template` and
+  `latest/`/`stable/` is expected, not a defect — do not "fix" it by running
+  `update.sh` unless a version bump is what you were actually asked for. Both
+  channels were last regenerated on 2026-08-25 and all three then read `3.24.1`
+  (gateway `10.48.1e` latest, `10.45.1g` stable).
 - **Ports: the number the host publishes is the socat port, not the API port.**
   `set_ports()` in `image-files/scripts/common.sh` binds IB Gateway's API to
   4002 (paper) / 4001 (live) on the container's own loopback, and socat forwards

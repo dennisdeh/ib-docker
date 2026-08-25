@@ -87,9 +87,13 @@ it downloads, hashes, rewrites the `ARG` line and greps to confirm the rewrite.
 The `sha256sum --check` form was proved both ways — `OK` on the genuine archive,
 exit 1 on a byte-appended copy.
 
-**Takes effect at the next channel regeneration.** Per `DECISIONS.md` #2 the
-templates are edited without running `update.sh`; `latest/` and `stable/` pick
-this up with the next IB Gateway release, as IBC bumps already do.
+**In effect since 2026-08-25.** Both channels were regenerated on request the
+same day (`./update.sh latest 10.48.1e`, `./update.sh stable 10.45.1g`), so the
+verification is in `latest/Dockerfile` and `stable/Dockerfile` rather than
+waiting for the next release. Both images were then built locally end to end,
+each reporting `ibgateway-<version>-standalone-linux-x64.sh: OK` and
+`IBCLinux-3.24.1.zip: OK`. This moved `stable` to IBC `3.24.1` — see
+`DECISIONS.md` #12.
 
 ### 5. Workflows: no `permissions:`, untrusted input reaching `run:` — **FIXED**
 
