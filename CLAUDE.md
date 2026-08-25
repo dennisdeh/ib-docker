@@ -359,7 +359,12 @@ trusting it — see *Debugging*.
   `…-standalone-linux-arm.sh` on aarch64 and `…-x64.sh` elsewhere, so a channel
   pinned to a version whose GitHub release carries only the x64 asset cannot
   build `linux/arm64` at all. `detect-releases.yml` uploads both
-  (`archs="x64 arm"`); older releases may not have them.
+  (`archs="x64 arm"`); older releases may not have them. **The platform list
+  follows from the channel, in two places that must agree** — `PLATFORMS` in
+  `build.yml` and the `platforms` output of `publish.yml`'s *Extract release
+  channel* step. As of 2026-08-25 `stable` (`10.45.1g`) is `linux/amd64` only
+  for this reason; `tests/unit/workflows.bats` fails if the two drift apart.
+  See `docs/OPEN_ITEMS.md` #18 before changing either.
 
 ---
 

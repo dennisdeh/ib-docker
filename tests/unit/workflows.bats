@@ -62,3 +62,29 @@ setup() {
 		return 1
 	}
 }
+
+# A channel can only build linux/arm64 for a version whose release carries the
+# arm installer, and build.yml and publish.yml must agree on which channels
+# those are - otherwise CI passes and the release then fails on a 404.
+# See docs/OPEN_ITEMS.md #18.
+@test "workflows: build and publish agree on which channels build arm64" {
+	local build_restricts publish_restricts
+	build_restricts="$(grep -c "inputs.channel == 'stable' && 'linux/amd64'" "${WORKFLOWS}/build.yml" || true)"
+	publish_restricts="$(grep -c 'platforms=linux/amd64"' "${WORKFLOWS}/publish.yml" || true)"
+	[ "$build_restricts" -eq "$publish_restricts" ] || {
+		echo "build.yml and publish.yml disagree on the arm64 channel restriction"
+		echo "build.yml: $build_restricts  publish.yml: $publish_restricts"
+		return 1
+	}
+}
+
+@test "workflows: no build step hard-codes its platform list" {
+	local f
+	for f in "${WORKFLOWS}/build.yml" "${WORKFLOWS}/publish.yml"; do
+		run grep -n 'platforms: linux/' "$f"
+		[ "$status" -ne 0 ] || {
+			echo "$(basename "$f") pins platforms inline; drive them from the channel: $output"
+			return 1
+		}
+	done
+}

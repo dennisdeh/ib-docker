@@ -270,7 +270,7 @@ Verified 2026-08-25 by building `./latest` for `linux/arm64` under QEMU, before
 and after: before, `jre/bin/java: not found`; after, the installer runs to
 completion and the image builds.
 
-### 18. `stable` is pinned to a version that has no `arm` release asset — OPEN
+### 18. `stable` is pinned to a version that has no `arm` release asset — **OPEN (version decision)**
 
 *Found 2026-08-25, while fixing #17.*
 
@@ -286,9 +286,19 @@ architectures, and every `stable` release from `10.45.1h` onward has the `arm`
 asset. `stable` is four releases behind because the bot's
 `update-stable-to-10.45.1j` branch (opened 2026-08-06) has never been merged.
 
-Resolving it is a version decision, not a code one, so it is left to the owner:
-bump `stable` to a release that has the asset, or accept that `stable` publishes
-`linux/amd64` only until the next stable bump lands.
+**Handled without a version bump, 2026-08-25.** Which platforms a channel builds
+is now derived from the channel rather than hard-coded: `PLATFORMS` in
+`build.yml` and the `platforms` output of the `Extract release channel` step in
+`publish.yml` give `stable` `linux/amd64` only. CI and a release therefore both
+pass, and nothing about the contents of the published `stable` image changes —
+its `linux/arm64` build has never once succeeded, so no working artefact is
+lost. `tests/unit/workflows.bats` pins the two workflows to the same rule.
+
+**The version decision is still the owner's.** Bumping `stable` to `10.45.1j`
+(the bot's `update-stable-to-10.45.1j` branch, opened 2026-08-06 and never
+merged) restores `linux/arm64` for `stable`; deleting the `stable` condition in
+both workflows is then the whole of the code change. Until that happens,
+`stable` is `linux/amd64` only, and this item stays open to say so.
 
 ## Low / accepted risk (record the decision if you accept it)
 
