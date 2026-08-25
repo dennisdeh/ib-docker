@@ -11,8 +11,14 @@ defaults:
     shell: "bash -Eeuo pipefail -x {0}"
 
 env:
-  IBC_REPO: https://github.com/IbcAlpha/IBC.git
+  # OWNER/REPO: what `gh api` wants, and enough to build a download URL from.
+  IBC_REPO: IbcAlpha/IBC
   BRANCH_PREFIX: IBC-update
+  # Both the pinned version and the upstream tag are checked against this before
+  # either is used. The tag reaches a branch name, two `sed` patterns, a
+  # download URL and a `git push`, so it is third-party input in the same sense
+  # as IB's buildVersion in detect-releases.yml, and gets the same treatment.
+  VERSION_PATTERN: '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
 jobs:
   detect-release:
     name: Detect Release
@@ -33,21 +39,47 @@ jobs:
       - name: Get Current Version
         id: version
         run: |
-          CURRENT_IBC="$(grep 'ENV IBC_VERSION' Dockerfile.template|cut -d '=' -f 2)"
-          echo "CURRENT_IBC=$CURRENT_IBC" >> $GITHUB_OUTPUT
+          # Anchored and -m1: the old pattern was an unanchored `grep
+          # 'ENV IBC_VERSION'`, which would return every matching line.
+          CURRENT_IBC="$(grep -m1 '^ENV IBC_VERSION=' Dockerfile.template | cut -d '=' -f 2)"
+          if ! [[ "$CURRENT_IBC" =~ $VERSION_PATTERN ]]; then
+            echo "::error::Dockerfile.template pins an unreadable IBC_VERSION: '${CURRENT_IBC}'"
+            exit 1
+          fi
+
+          # The Create PR step rewrites both templates with this one value, and
+          # `sed` reports nothing when it matches nothing. If they disagree, the
+          # bump would silently land in one file and leave the other behind.
+          TWS_IBC="$(grep -m1 '^ENV IBC_VERSION=' Dockerfile.tws.template | cut -d '=' -f 2)"
+          if [ "$CURRENT_IBC" != "$TWS_IBC" ]; then
+            echo "::error::templates disagree: Dockerfile.template ${CURRENT_IBC}, Dockerfile.tws.template ${TWS_IBC}"
+            exit 1
+          fi
+
+          echo "CURRENT_IBC=$CURRENT_IBC" >> "$GITHUB_OUTPUT"
 
       - name: Get IBC latest version
         id: ibc_version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          IBC_LATEST="$(gh release list -R "$IBC_REPO" --exclude-drafts --exclude-pre-releases | grep 'Latest' | cut -f1)"
-          if [ -n "${IBC_LATEST}" ]
-          then
-            echo "IBC_LATEST=$IBC_LATEST" >> "$GITHUB_OUTPUT"
-          else
-            echo "IBC_LATEST=" >> "$GITHUB_OUTPUT"
+          # The old form parsed `gh release list` - a human-facing table, not a
+          # stable interface - with `grep 'Latest'`, which matches the word in
+          # any column including a release title, and `cut -f1`, a positional
+          # field rather than a named one. Ask for the tag itself:
+          # /releases/latest is defined as the latest published release,
+          # excluding drafts and prereleases.
+          IBC_LATEST="$(gh api "repos/${IBC_REPO}/releases/latest" --jq '.tag_name')"
+
+          # An empty value used to be written out and compared, so a transient
+          # API failure read as "there is a new version called nothing" and got
+          # as far as branch IBC-update- and IBC_VERSION= in both templates.
+          if ! [[ "$IBC_LATEST" =~ $VERSION_PATTERN ]]; then
+            echo "::error::unexpected IBC release tag: '${IBC_LATEST}'"
+            exit 1
           fi
+
+          echo "IBC_LATEST=$IBC_LATEST" >> "$GITHUB_OUTPUT"
 
       - name: Verify latest version
         id: verify_latest
@@ -58,13 +90,20 @@ jobs:
           current="$CURRENT_IBC"
           latest="$IBC_LATEST"
 
-          if [[ "$current" = "$latest" ]]; then
+          # Only ever move forward. A plain `!=` also fires when upstream's
+          # latest resolves to something *older* - a re-tag, or a newer release
+          # un-marked as latest - and would open a downgrade PR off the back of
+          # it. `sort -V` orders 3.9 before 3.10, which a string compare does not.
+          if [ "$current" = "$latest" ]; then
             update="false"
-          else
+          elif [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" = "$latest" ]; then
             update="true"
+          else
+            echo "::warning::IBC latest is ${latest}, behind the pinned ${current}; not downgrading"
+            update="false"
           fi
 
-          echo "update=$update" >> $GITHUB_OUTPUT
+          echo "update=$update" >> "$GITHUB_OUTPUT"
 
       - name: Check if branch already exists
         id: verify_branch
@@ -116,12 +155,16 @@ jobs:
           echo ".> updating Dockerfile.tws.template"
           sed -i "s/IBC_VERSION=${ver}/IBC_VERSION=${latest}/g" Dockerfile.tws.template
 
+          # sed exits 0 whether or not it matched.
+          grep -q "^ENV IBC_VERSION=${latest}$" Dockerfile.template
+          grep -q "^ENV IBC_VERSION=${latest}$" Dockerfile.tws.template
+
           # IBC ships no checksum file, so Dockerfile.template pins the digest.
           # It must move with IBC_VERSION or the next build fails verification.
           echo ".> recomputing IBC_SHA256"
           ibc_zip="IBCLinux-${latest}.zip"
           curl -sSLf -o "$ibc_zip" \
-            "${IBC_REPO%.git}/releases/download/${latest}/${ibc_zip}"
+            "https://github.com/${IBC_REPO}/releases/download/${latest}/${ibc_zip}"
           new_sha="$(sha256sum "$ibc_zip" | cut -d ' ' -f 1)"
           rm -f "$ibc_zip"
           sed -i "s/^ARG IBC_SHA256=.*/ARG IBC_SHA256=${new_sha}/" Dockerfile.template
