@@ -9,6 +9,9 @@ tws_settings/
 ssh/
 /config/
 .python-version
+# CLAUDE.md and CONTRIBUTING.md both tell you to create this to run
+# `pre-commit`; it is a local tool install, never part of the tree.
+.venv/
 /*_password.txt
 /pass/*
 /init-scripts/*
