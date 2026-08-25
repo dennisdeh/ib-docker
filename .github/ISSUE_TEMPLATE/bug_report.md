@@ -27,11 +27,11 @@ docker pull ghcr.io/dennisdeh/tws-rdesktop:stable
 ```
 
 Please make sure that you are using the `docker-compose.yml` file provided as
-example, those files are tested and you should be able to get things working
-by using it.
+example, it is tested and you should be able to get things working by using it.
 
-- [ib-gateway](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml)
-- [tws-rdesktop](https://github.com/dennisdeh/ib-gateway-docker/blob/master/tws-docker-compose.yml)
+- [docker-compose.yml](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml)
+  — the `ib-gateway` and `tws` services both live in it; `IB_APP` in `.env`
+  selects which one runs
 
 The example `.env` file on [README.md](https://github.com/dennisdeh/ib-gateway-docker/blob/master/README.md)
 contains safe default values. Make sure you test the container using it as

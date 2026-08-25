@@ -25,10 +25,11 @@ vendored copy of this project inside the Investio repository:
 Other services on this machine (`inv_visualisation`, `inv_db`, `inv_redis`,
 `inv_ntfy`) consume the gateway's API port.
 
-> Both compose files declare `name: inv_ibkr`, so Compose treats them as the
-> same project regardless of directory: a lifecycle command run in *this*
-> repository acts on those live containers. Verified 2026-08-25 — `docker
-> compose ps` here lists them. See `CLAUDE.md`.
+> This repository's `docker-compose.yml` declares `name: inv_ibkr`, the same
+> project name the Investio copy uses, and Compose identifies a project by that
+> name rather than by directory: a lifecycle command run in *this* repository
+> acts on those live containers. Verified 2026-08-25 — `docker compose ps` here
+> lists them. See `CLAUDE.md`.
 
 ## Ports
 
@@ -55,6 +56,12 @@ docker compose config      # validate .env + wiring, starts nothing
 docker compose up -d       # start
 docker compose down        # stop — interrupts every dependent service
 ```
+
+`up -d` starts whatever `IB_APP` in that checkout's `.env` selects, plus the
+bastion. The vendored copy still carries the pre-2026-08-25 two-file layout,
+which has no `IB_APP`; when it is synced from this repository, `.env` there
+needs `IB_APP=ib-gateway` and `COMPOSE_PROFILES=${IB_APP}` or `up -d` will
+create the bastion alone.
 
 Safe from anywhere, read-only:
 

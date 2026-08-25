@@ -52,9 +52,10 @@ All tags are available in the container repository for [ib-gateway][1] and
 ## How to use it?
 
 Create a `docker-compose.yml` file (or include ib-gateway services on your existing
-one). The sample files provided can be used as starting point,
-[ib-gateway-compose](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml) and
-[tws-rdesktop-compose](https://github.com/dennisdeh/ib-gateway-docker/blob/master/tws-docker-compose.yml).
+one). The [sample file provided](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml)
+can be used as starting point. It carries both images in one file — an
+`ib-gateway` service and a `tws` service — and `.env` picks which one runs, see
+[Choosing the application](#choosing-the-application).
 
 ```yaml
 name: algo-trader
@@ -119,6 +120,9 @@ services:
 Create an .env on root directory. You can use the provided [.env-dist](https://github.com/dennisdeh/ib-gateway-docker/blob/master/.env-dist) as a starting point. Example .env file:
 
 ```bash
+# which image to run: ib-gateway, tws, or both
+IB_APP=ib-gateway
+COMPOSE_PROFILES=${IB_APP}
 TWS_USERID=myTwsAccountName
 TWS_PASSWORD=myTwsPassword
 # see credentials section
@@ -169,6 +173,30 @@ docker compose up
 ```
 
 To get a GUI you can use vnc for ib-gateway or RDP for TWS.
+
+### Choosing the application
+
+The sample `docker-compose.yml` defines both images: service `ib-gateway` runs
+[ib-gateway][1], service `tws` runs [tws-rdesktop][2]. Each sits behind a
+[Compose profile](https://docs.docker.com/compose/how-tos/profiles/) of the same
+name, so only the one you select is created. `IB_APP` in `.env` is the switch:
+
+```bash
+# .env
+IB_APP=ib-gateway        # IB Gateway, headless, VNC for the GUI
+#IB_APP=tws              # TWS desktop, RDP for the GUI
+#IB_APP=ib-gateway,tws   # both at once
+COMPOSE_PROFILES=${IB_APP}
+```
+
+`COMPOSE_PROFILES` is the variable Compose itself reads; `IB_APP` exists so
+there is one obviously named line to edit. The two services publish different
+host ports — `4001/4002/5900` against `7496/7497/3370` — so `ib-gateway,tws`
+starts both without a collision.
+
+Naming a service on the command line enables its profile for that command, so
+`docker compose build ib-gateway` works whatever `IB_APP` is set to. A bare
+`docker compose build` only builds the selected service.
 
 Looking for help? Please keep reading below, or go to
 [discussion](https://github.com/dennisdeh/ib-gateway-docker/discussions) section for common
@@ -240,11 +268,11 @@ TWS image uses the following ports
 
 | Port | Description   |
 | ---- | --- |
-| 7498 | TWS API port for live accounts. Through socat, internal TWS API port 7496. Mapped **externally** to 7496 in sample `tws-docker-compose.yml`.  |
-| 7499 | TWS API port for paper accounts. Through socat, internal TWS API port 7497. Mapped **externally** to 7497 in sample `tws-docker-compose.yml`. |
-| 3389 | Port for RDP server. Mapped **externally** to 3370 in sample `tws-docker-compose.yml`.  |
+| 7498 | TWS API port for live accounts. Through socat, internal TWS API port 7496. Mapped **externally** to 7496 by the `tws` service of the sample `docker-compose.yml`.  |
+| 7499 | TWS API port for paper accounts. Through socat, internal TWS API port 7497. Mapped **externally** to 7497 by the `tws` service of the sample `docker-compose.yml`. |
+| 3389 | Port for RDP server. Mapped **externally** to 3370 by the `tws` service of the sample `docker-compose.yml`.  |
 
-Utility [socat](https://manpages.ubuntu.com/manpages/noble/en/man1/socat.1.html) is used to publish TWS API port from container's `127.0.0.1:4001/4002` to container's `0.0.0.0:4003/4004`, the sample `docker-file.yml` maps ports to the host back to `4001/4002`. This way any application can use the "standard" IB Gateway ports. For TWS `127.0.0.1:7496/7497` to container's `0.0.0.0:7498/7499`, and `tws-docker-file.yml` will map ports to host back to `7496/7497`.
+Utility [socat](https://manpages.ubuntu.com/manpages/noble/en/man1/socat.1.html) is used to publish TWS API port from container's `127.0.0.1:4001/4002` to container's `0.0.0.0:4003/4004`, the sample `docker-compose.yml` maps ports to the host back to `4001/4002`. This way any application can use the "standard" IB Gateway ports. For TWS `127.0.0.1:7496/7497` to container's `0.0.0.0:7498/7499`, and the `tws` service will map ports to host back to `7496/7497`.
 
 Note that with the above `docker-compose.yml`, ports are only exposed to the docker host (127.0.0.1), but not to the host network. To expose it to the host network change the port mappings on accordingly (remove the '127.0.0.1:'). **Attention**: See [Leaving localhost](#leaving-localhost)
 
@@ -256,7 +284,7 @@ From `10.26.1h` it's possible to run TWS in a container. [tws-rdesktop](https://
 
 [tws-rdesktop](https://github.com/dennisdeh/ib-gateway-docker/pkgs/container/tws-rdesktop) has the following recomended settings.
 
-In [tws-docker-compose.yml](https://github.com/dennisdeh/ib-gateway-docker/blob/master/tws-docker-compose.yml):
+On the `tws` service in [docker-compose.yml](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml):
 
 - set `/dev/dri:/dev/dri`
 - shm_size: "1gb"
@@ -589,11 +617,8 @@ you have empirically probed that is a bug, ie it does not work to me is not a bu
 To use aarch64 you just need to run:
 
 ```bash
-# ib-gateway
+# set IB_APP in .env to ib-gateway or tws, then
 docker compose up
-
-# TWS
-docker compose -f tws-docker-compose.yml up
 ```
 
 This will pull the right image for aarch64 architecture.

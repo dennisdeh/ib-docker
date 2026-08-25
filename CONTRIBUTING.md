@@ -71,8 +71,10 @@ pre-commit install
     # Edit the .env file with your test configuration
     nano .env
 
-    # Build and run the image (e.g., for the 'stable' release)
-    docker-compose -f docker-compose.yml build --pull
+    # Build the image. Name the service: docker-compose.yml holds both
+    # ib-gateway and tws behind Compose profiles, and a bare `build` only
+    # builds the one IB_APP selects.
+    docker compose build --pull ib-gateway   # or: tws
     ```
 
     Ensure the container starts and functions as expected with your changes.

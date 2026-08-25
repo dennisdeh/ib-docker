@@ -24,8 +24,9 @@ expected to consume this repository later; until it does, a change merged here
 reaches the running stack only when someone updates that copy. *(Stated by the
 owner and confirmed from the containers' compose labels, 2026-08-25.)*
 
-> **Compose commands run here still hit those live containers.** Both compose
-> files declare `name: inv_ibkr`, and Compose identifies a project by that name,
+> **Compose commands run here still hit those live containers.** This
+> repository's `docker-compose.yml` and the Investio copy both declare
+> `name: inv_ibkr`, and Compose identifies a project by that name,
 > not by directory — so `docker compose ps` in this repo lists the running
 > `inv_gateway`/`inv_bastion` (verified 2026-08-25), and `down`, `restart` or
 > `up -d` would act on them. **Never run a compose lifecycle command here.**
@@ -110,6 +111,13 @@ feature, not a bug.
   `update.sh` unless a version bump is what you were actually asked for. Both
   channels were last regenerated on 2026-08-25 and all three then read `3.24.1`
   (gateway `10.48.1e` latest, `10.45.1g` stable).
+- **One compose file, two applications.** `docker-compose.yml` holds an
+  `ib-gateway` service and a `tws` service behind Compose profiles of the same
+  name; `IB_APP` in `.env` feeds `COMPOSE_PROFILES` and decides which one is
+  created. `bastion` carries no profile, so it always starts. A bare
+  `docker compose build` builds only the selected service — naming a service
+  enables its profile for that command, so `docker compose build tws` works
+  whatever `IB_APP` says *(verified 2026-08-25)*.
 - **Ports: the number the host publishes is the socat port, not the API port.**
   `set_ports()` in `image-files/scripts/common.sh` binds IB Gateway's API to
   4002 (paper) / 4001 (live) on the container's own loopback, and socat forwards
@@ -136,9 +144,11 @@ feature, not a bug.
   suffixes appended to `IBC_INI` and `TWS_SETTINGS_PATH`, 15 s apart, and forces
   `SSH_VNC_PORT`/`SSH_REMOTE_PORT` empty for the second. Code that assumes one
   IBC process per container is wrong.
-- `.env` here is a **superset** serving both `docker-compose.yml` and
-  `bastion/docker-compose.yml`. A key that looks unused by the gateway is
-  probably the bastion's.
+- `.env` here is a **superset** serving `docker-compose.yml` — all three of its
+  services — and `bastion/docker-compose.yml`. A key that looks unused by the
+  gateway is probably the bastion's or the TWS service's; the TWS host ports are
+  `PORT_HOST_RDESKTOP_*` and `PORT_HOST_RDP`, the gateway's `PORT_HOST_TWS_*`
+  and `PORT_HOST_VNC_SERVER`.
 
 ---
 
@@ -212,6 +222,11 @@ docker run --rm -v "$PWD:/workdir" -w /workdir davidanson/markdownlint-cli2:late
 ```bash
 timeout 1800 docker compose build --pull ib-gateway   # builds ./latest
 docker build -t ib-gateway:check ./stable             # the other channel
+
+# tws builds FROM ghcr.io/dennisdeh/ib-gateway:<version>, which is not
+# anonymously pullable - see OPEN_ITEMS #16 before reaching for --pull here
+docker tag ghcr.io/dennisdeh/ib-gateway:latest ghcr.io/dennisdeh/ib-gateway:10.48.1e
+timeout 2400 docker compose build tws
 ```
 
 Report the outcome. A build that was not run is not a build that passed.
@@ -251,8 +266,9 @@ tests/run.sh all
 **`tests/run.sh unit` is the fast offline selector** and the one CI runs
 (`.github/workflows/test.yml`).
 
-- `tests/unit/` sources the pure functions directly — no container, no network,
-  no credentials. 19 tests as of 2026-08-25.
+- `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
+  reads `docker-compose.yml` and `.env-dist` as text — no container, no network,
+  no credentials. 26 tests as of 2026-08-25.
 - `tests/container/` starts one throwaway container from an existing image with
   a command override that runs **only** the port-forwarding half of `run.sh`.
   It never starts IBC, so it needs no credentials and never contacts IB — which
@@ -290,7 +306,7 @@ trusting it — see *Debugging*.
   on the host to clean up after a test.
 - **A scoped grep answers a scoped question.** Version strings, port numbers and
   env-var names exist in `image-files/`, both channel directories,
-  `template_README.md`, `README.md`, both compose files, `.env-dist` and the
+  `template_README.md`, `README.md`, `docker-compose.yml`, `.env-dist` and the
   workflows. When correcting one, `rg -n "<value>"` over the **whole tree**
   before declaring it fixed — and remember `README.md` is generated, so fixing
   it there fixes nothing.

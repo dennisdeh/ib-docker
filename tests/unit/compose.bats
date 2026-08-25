@@ -1,0 +1,98 @@
+#!/usr/bin/env bats
+# shellcheck disable=SC2016  # ${IB_APP} and ${VAR} are matched literally here
+#
+# docker-compose.yml - the profile wiring that decides which image runs.
+#
+# One file carries both applications, so a broken profile no longer means "the
+# wrong service is missing" but "compose silently starts nothing", or worse,
+# starts both against the same host ports. None of this needs docker: the
+# assertions are the file's contract with .env-dist.
+
+setup() {
+	ROOT="${BATS_TEST_DIRNAME}/../.."
+	COMPOSE="${ROOT}/docker-compose.yml"
+	ENV_DIST="${ROOT}/.env-dist"
+}
+
+# Everything indented under `  <name>:` in the services map. Comment lines in
+# this file are indented two spaces, so they must not be read as the next
+# service - that is what the `#` exclusion below is for.
+service_block() {
+	awk -v svc="$1" '
+		/^services:/           { in_services = 1; next }
+		in_services && /^[^[:space:]#]/ { in_services = 0 }
+		in_services && $0 ~ "^  " svc ":[[:space:]]*$" { in_svc = 1; next }
+		in_svc && /^  [^[:space:]#]/ { in_svc = 0 }
+		in_svc                 { print }
+	' "$COMPOSE"
+}
+
+service_names() {
+	awk '
+		/^services:/ { in_services = 1; next }
+		in_services && /^[^[:space:]#]/ { in_services = 0 }
+		in_services && /^  [a-z][a-z0-9_-]*:[[:space:]]*$/ {
+			gsub(/[[:space:]:]/, ""); print
+		}
+	' "$COMPOSE"
+}
+
+# The ${VAR} names a service publishes ports through.
+port_vars() {
+	service_block "$1" | awk '
+		/^    ports:/            { in_ports = 1; next }
+		in_ports && /^    [^[:space:]-]/ { in_ports = 0 }
+		in_ports                 { print }
+	' | grep -o '\${[A-Z_]*' | tr -d '${' | sort -u
+}
+
+@test "compose: one file defines ib-gateway, tws and bastion" {
+	run service_names
+	[ "$status" -eq 0 ]
+	[ "$(echo "$output" | sort | tr '\n' ' ')" = "bastion ib-gateway tws " ]
+}
+
+@test "compose: ib-gateway sits behind the ib-gateway profile" {
+	run service_block ib-gateway
+	[[ $output == *"profiles:"* ]]
+	[[ $output == *"- ib-gateway"* ]]
+}
+
+@test "compose: tws sits behind the tws profile" {
+	run service_block tws
+	[[ $output == *"profiles:"* ]]
+	[[ $output == *"- tws"* ]]
+}
+
+@test "compose: bastion declares no profile, so it always starts" {
+	run service_block bastion
+	[[ $output != *"profiles:"* ]]
+}
+
+@test ".env-dist: IB_APP feeds COMPOSE_PROFILES" {
+	# IB_APP is the name a human edits; COMPOSE_PROFILES is the only name
+	# compose reads. Dropping the second line makes IB_APP inert.
+	run grep -qx 'IB_APP=ib-gateway' "$ENV_DIST"
+	[ "$status" -eq 0 ]
+	run grep -qx 'COMPOSE_PROFILES=${IB_APP}' "$ENV_DIST"
+	[ "$status" -eq 0 ]
+}
+
+@test "compose: ib-gateway and tws publish through disjoint port variables" {
+	# IB_APP=ib-gateway,tws is supported, so a shared variable would be a
+	# host port collision that only shows up when both are selected.
+	local shared
+	shared=$(comm -12 <(port_vars ib-gateway) <(port_vars tws))
+	[ -z "$shared" ]
+}
+
+@test ".env-dist: defines every port variable the compose file substitutes" {
+	local var
+	for var in $(port_vars ib-gateway) $(port_vars tws); do
+		run grep -q "^${var}=" "$ENV_DIST"
+		[ "$status" -eq 0 ] || {
+			echo "missing from .env-dist: $var"
+			return 1
+		}
+	done
+}

@@ -182,13 +182,39 @@ The live deployment is unaffected: with the real `.env` the same file still
 resolves to `inv_gateway`/`inv_bastion` on ports 9899/9898/9897 and bastion
 22222, confirmed by `docker compose config`.
 
+### 16. `docker compose build --pull tws` cannot work on a clean machine
+
+*Found 2026-08-25, while verifying the merged compose file. Not caused by that
+merge — it predates it.*
+
+`Dockerfile.tws` starts `FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION}` with
+`IB_VERSION` defaulting to the channel's gateway version, so the TWS build needs
+that **exact tag** present. `ghcr.io/dennisdeh/ib-gateway` is not anonymously
+pullable — `docker pull ghcr.io/dennisdeh/ib-gateway:10.48.1e` and `:10.47.1c`
+both returned `error from registry: denied` on 2026-08-25 — so `--pull` fails at
+the first stage with `403 Forbidden` from the ghcr token endpoint.
+
+Building the gateway first is not enough either: `docker compose build
+ib-gateway` tags it `:latest`, not `:10.48.1e`. The workaround used to verify
+the merge was
+
+```bash
+docker compose build --pull ib-gateway
+docker tag ghcr.io/dennisdeh/ib-gateway:latest ghcr.io/dennisdeh/ib-gateway:10.48.1e
+docker compose build tws          # no --pull
+```
+
+after which the TWS build completed. A real fix is either making the package
+public, or giving the `tws` service a `build.args` entry so `IB_VERSION` can be
+pointed at a locally built tag.
+
 ## Low / accepted risk (record the decision if you accept it)
 
 | # | item | note |
 |---|---|---|
 | 9 | `echo "ibgateway ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers` in `Dockerfile.template` | The unprivileged container user can become root at will. With `START_SCRIPTS`/`X_SCRIPTS`/`IBC_SCRIPTS` executing arbitrary mounted shell, there is no privilege boundary inside the container. Inherited from upstream. |
 | 10 | `x11vnc … -passwd "$VNC_SERVER_PASSWORD"` in `run.sh` | Password visible in the container's process list; `-passwdfile`/`-rfbauth` avoid it. VNC auth is weak by design (8 effective chars). Mitigated by the `127.0.0.1` publish. |
-| 11 | TWS image default RDP password is `abc` (`${PASSWD:-abc}` in `start_session.sh`) | Safe only because `tws-docker-compose.yml` binds RDP to `127.0.0.1`. Anyone publishing 3389 more widely inherits a known password. |
+| 11 | TWS image default RDP password is `abc` (`${PASSWD:-abc}` in `start_session.sh`) | Safe only because the `tws` service in `docker-compose.yml` binds RDP to `127.0.0.1`. Anyone publishing 3389 more widely inherits a known password. |
 | 12 | `run_ssh.sh` runs `bash -c "ssh ${_OPTIONS} … ${_USER_TUNNEL}"` | Re-parses operator-supplied env values through a shell. Not a vulnerability (operator-controlled) but any metacharacter executes. |
 | 13 | Dependabot watches `/stable` and `/latest` only | Those are *generated*; a base-image bump there is overwritten by the next `update.sh`. The real sources (`Dockerfile.template`, `Dockerfile.tws.template`) and `/bastion` are unwatched, as is the floating tag `lscr.io/linuxserver/rdesktop:ubuntu-xfce`. |
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
