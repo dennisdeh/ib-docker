@@ -80,6 +80,13 @@ digests are measured and pinned:
 The JDK branch also had `;` separators, so a failed download or extraction did
 not stop the build; it is `&&`-chained now.
 
+> *Superseded in part, 2026-08-25.* The Zulu JDK is no longer downloaded at all
+> — it was never used, see #17 — so `ZULU_SHA256` is gone with it. `IBC_SHA256`
+> is unchanged and still checked. The IB installer keeps its published
+> `.sha256`, and its download now uses `curl -f`, so a missing asset fails as a
+> 404 instead of saving an HTML error page and failing the checksum with a
+> misleading message.
+
 A pinned digest must move with `IBC_VERSION`, so
 `.github/workflows/detect-ibc-release.yml` recomputes it when it opens a bump
 PR. Verified 2026-08-25 by running that logic against the real 3.24.2 release:
@@ -182,7 +189,7 @@ The live deployment is unaffected: with the real `.env` the same file still
 resolves to `inv_gateway`/`inv_bastion` on ports 9899/9898/9897 and bastion
 22222, confirmed by `docker compose config`.
 
-### 16. `docker compose build --pull tws` cannot work on a clean machine
+### 16. `docker compose build --pull tws` cannot work on a clean machine — **FIXED**
 
 *Found 2026-08-25, while verifying the merged compose file. Not caused by that
 merge — it predates it.*
@@ -204,9 +211,84 @@ docker tag ghcr.io/dennisdeh/ib-gateway:latest ghcr.io/dennisdeh/ib-gateway:10.4
 docker compose build tws          # no --pull
 ```
 
-after which the TWS build completed. A real fix is either making the package
-public, or giving the `tws` service a `build.args` entry so `IB_VERSION` can be
-pointed at a locally built tag.
+after which the TWS build completed. **FIXED 2026-08-25.** `Dockerfile.tws.template` now takes the base image as two
+build args, `IB_GATEWAY_IMAGE` and `IB_VERSION`, defaulting to the ghcr
+reference so a published build is unchanged. The `tws` compose service passes
+`${IB_GATEWAY_IMAGE:-ghcr.io/dennisdeh/ib-gateway}` and `${IB_GATEWAY_TAG:-latest}`,
+and `latest` is the tag the `ib-gateway` service's own build produces — so
+
+```bash
+docker compose build ib-gateway
+docker compose build tws
+```
+
+works on a clean machine with no registry access and no manual `docker tag`.
+CI points the same two args at a job-local registry; see `DECISIONS.md` #15.
+
+### 17. The `linux/arm64` image could never have been built — **FIXED**
+
+*Found 2026-08-25, from the CI failures on `master`.*
+
+Every `Docker Image CI` run since `continue-on-error` was removed failed, always
+on the same step and always on the `arm64` leg:
+
+```text
+process "/dev/.buildkit_qemu_emulator /bin/sh -c apt-get update -y && …"
+  did not complete successfully: exit code: 255
+```
+
+Reproduced locally with `docker build --platform linux/arm64 ./latest`, which
+gives the readable form of the same failure:
+
+```text
+Starting Installer ...
+./ibgateway-10.48.1e-standalone-linux-x64.sh: 813:
+  /tmp/setup/ibgateway-…-x64.sh.6577.dir/jre/bin/java: not found
+```
+
+The installer bundles its own JRE and runs it. The x64 installer's JRE is an
+x86-64 binary, which cannot execute in an `aarch64` container — `sh` reports
+"not found", exit 127, which QEMU surfaces to BuildKit as 255.
+
+`app_java_home=/usr/local/zulu17` was meant to point the installer at the
+aarch64 Zulu JRE the build downloads for exactly this purpose. **It is not
+honoured**: the installer had already reached its own `jre/bin/java` by the time
+the message appeared. So the Zulu tarball was fetched, checksum-verified, copied
+into the runtime image and never used, on every build, on both architectures.
+
+The failure predates the reporting. `continue-on-error: true` (item #1) meant
+the job reported success regardless, so the last genuinely-green `arm64` build,
+if there ever was one, is not identifiable from the run history.
+
+**The fix** is to install the architecture's own installer —
+`…-standalone-linux-arm.sh` on `aarch64`, `…-x64.sh` elsewhere. IB publishes
+both and `detect-releases.yml` already attaches both to each release
+(`archs="x64 arm"`). The Zulu download, `ZULU_SHA256` and the
+`COPY --from=setup /usr/local/` that existed only to carry it are removed.
+
+Verified 2026-08-25 by building `./latest` for `linux/arm64` under QEMU, before
+and after: before, `jre/bin/java: not found`; after, the installer runs to
+completion and the image builds.
+
+### 18. `stable` is pinned to a version that has no `arm` release asset — OPEN
+
+*Found 2026-08-25, while fixing #17.*
+
+The per-architecture download in #17 needs `…-standalone-linux-arm.sh` to exist
+in the channel's GitHub release. It does for `latest` (`10.48.1e`, HTTP 200) but
+**not** for `stable` (`10.45.1g`, HTTP 404) — that release carries only the x64
+installer and its `.sha256`. So `stable` cannot build `linux/arm64` at any
+version it is currently pinned to, and its `arm64` leg fails on a missing file
+rather than on a broken JRE.
+
+This is a legacy gap, not an ongoing one: `detect-releases.yml` attaches both
+architectures, and every `stable` release from `10.45.1h` onward has the `arm`
+asset. `stable` is four releases behind because the bot's
+`update-stable-to-10.45.1j` branch (opened 2026-08-06) has never been merged.
+
+Resolving it is a version decision, not a code one, so it is left to the owner:
+bump `stable` to a release that has the asset, or accept that `stable` publishes
+`linux/amd64` only until the next stable bump lands.
 
 ## Low / accepted risk (record the decision if you accept it)
 

@@ -4,7 +4,17 @@
 
 <img src="https://github.com/dennisdeh/ib-gateway-docker/blob/master/logo.png" height="300" class="center" alt="IB Gateway Docker"/>
 
-This is a fork of the original [ib-gateway-docker](https://github.com/gnzsnz/ib-gateway-docker) project.
+## Credits
+
+This project began as a fork of
+[gnzsnz/ib-gateway-docker](https://github.com/gnzsnz/ib-gateway-docker) by
+gnzsnz, itself built on earlier work by Emanuel Fernandes, and it keeps their
+MIT licence and copyright — see [LICENSE](LICENSE). The bastion image is a fork
+of [gnzsnz/docker-bastion](https://github.com/gnzsnz/docker-bastion). Thanks to
+both.
+
+It is now maintained independently: it does not track, sync from, or test
+against those repositories, and issues found here are fixed here.
 
 ## What is it?
 
@@ -622,6 +632,13 @@ docker compose up
 ```
 
 This will pull the right image for aarch64 architecture.
+
+The aarch64 image installs Interactive Brokers' own `arm` installer, so a
+channel can only publish `linux/arm64` for a version whose
+[release](https://github.com/dennisdeh/ib-gateway-docker/releases) carries the
+`ibgateway-<version>-standalone-linux-arm.sh` asset. Releases from
+`stable@10.45.1h` and `latest@10.47.1e` onward do; a few older ones are x64
+only, and for those the image is published for `linux/amd64` alone.
 
 ## IB Gateway installation files
 

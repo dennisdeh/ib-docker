@@ -10,11 +10,18 @@ plausible-looking action is the wrong one.*
 
 ## Project overview
 
-A fork of [gnzsnz/ib-gateway-docker](https://github.com/gnzsnz/ib-gateway-docker)
-that builds Docker images running Interactive Brokers Gateway (and TWS) headless,
+Builds Docker images running Interactive Brokers Gateway (and TWS) headless,
 driven by [IBC](https://github.com/IbcAlpha/IBC) under Xvfb, with `socat` and/or
 an SSH tunnel exposing the IB API port outside the container. The published
 images are `ghcr.io/dennisdeh/ib-gateway` and `ghcr.io/dennisdeh/tws-rdesktop`.
+
+**This project is independent, not a tracking fork.** It began as a fork of
+`gnzsnz/ib-gateway-docker`, which `LICENSE` and the README credit, and that is
+the whole of the relationship: no remote, no sync, no check, no schedule and no
+decision here depends on that repository. Judge every question on this tree and
+on the real upstreams the image actually consumes — Interactive Brokers'
+installer servers, `IbcAlpha/IBC`, `lscr.io/linuxserver/rdesktop` and Azul.
+*(Decoupled on the owner's instruction, 2026-08-25.)*
 
 **This checkout is the source of the images, not the running deployment.**
 `inv_gateway` and `inv_bastion` are started from a vendored copy of this project
@@ -58,9 +65,9 @@ docker compose config   # validates .env + compose wiring without starting anyth
   `python3 -m venv .venv && .venv/bin/pip install pre-commit`. **There is no
   `gh` — never plan a step around it.** PRs are opened in the browser, or the
   bot opens them from CI.
-- The remote is `origin` → `https://github.com/dennisdeh/ib-gateway-docker.git`.
-  Upstream (`gnzsnz`) is **not** configured as a remote; add it explicitly if a
-  sync is requested.
+- The remote is `origin` → `https://github.com/dennisdeh/ib-gateway-docker.git`,
+  and it is the only one. **Do not add the repository this was forked from as a
+  remote and do not sync from it** — see *Project overview*.
 
 ### What a fresh clone does not have
 
@@ -215,7 +222,9 @@ docker run --rm -v "$PWD:/workdir" -w /workdir davidanson/markdownlint-cli2:late
 - `MD013` (line length) is off in `.markdownlint.yaml` on purpose: `README.md` is
   generated and mostly wide option tables. Do not reflow it by hand.
 - **Do not reorder `.env-dist`** to satisfy a stricter `dotenv-linter` than the
-  pinned hook. It churns a file kept aligned with upstream for no gain.
+  pinned hook. The file is grouped by service and by concern, which is what
+  makes it readable as the key list for two compose files; alphabetical order
+  would scatter each service's keys for no gain the pinned hook asks for.
 
 ### 2. Build — offline, slow
 
@@ -223,13 +232,25 @@ docker run --rm -v "$PWD:/workdir" -w /workdir davidanson/markdownlint-cli2:late
 timeout 1800 docker compose build --pull ib-gateway   # builds ./latest
 docker build -t ib-gateway:check ./stable             # the other channel
 
-# tws builds FROM ghcr.io/dennisdeh/ib-gateway:<version>, which is not
-# anonymously pullable - see OPEN_ITEMS #16 before reaching for --pull here
-docker tag ghcr.io/dennisdeh/ib-gateway:latest ghcr.io/dennisdeh/ib-gateway:10.48.1e
+# tws builds FROM the gateway image; the compose defaults point it at the
+# :latest tag the line above produces, so no registry access is needed
 timeout 2400 docker compose build tws
 ```
 
 Report the outcome. A build that was not run is not a build that passed.
+
+**A build on this machine only proves `linux/amd64`.** CI builds both
+architectures, and the two take genuinely different paths through
+`Dockerfile.template` — IB ships a separate installer per architecture. To
+reproduce the CI leg, register the emulator once
+(`docker run --privileged --rm tonistiigi/binfmt --install arm64`, undo with
+`--uninstall`), then:
+
+```bash
+timeout 2400 docker build --platform linux/arm64 -t ib-gateway:arm64 ./latest
+```
+
+Expect roughly 25 minutes under emulation, most of it the IB installer.
 
 ### 3. Runtime — the live containers are not ours to touch
 
@@ -330,11 +351,15 @@ trusting it — see *Debugging*.
   releases and downloaded by `Dockerfile.template` from `dennisdeh/…`, with a
   `sha256sum --check`. A build failing at the checksum step usually means the
   release asset is missing, not that the Dockerfile is wrong.
-- **IBC and the aarch64 Zulu JDK ship no checksum file, so their digests are
-  pinned in `Dockerfile.template` as `IBC_SHA256` / `ZULU_SHA256`.** `IBC_SHA256`
-  must move with `IBC_VERSION` — `detect-ibc-release.yml` recomputes it — and
-  `ZULU_SHA256` must move with `ZULU_NAME`. Changing either version without its
+- **IBC ships no checksum file, so its digest is pinned in
+  `Dockerfile.template` as `IBC_SHA256`,** and it must move with `IBC_VERSION`
+  — `detect-ibc-release.yml` recomputes it. Changing the version without the
   digest fails the build at verification, which is the intended behaviour.
+- **Each channel needs a release asset per architecture.** The build picks
+  `…-standalone-linux-arm.sh` on aarch64 and `…-x64.sh` elsewhere, so a channel
+  pinned to a version whose GitHub release carries only the x64 asset cannot
+  build `linux/arm64` at all. `detect-releases.yml` uploads both
+  (`archs="x64 arm"`); older releases may not have them.
 
 ---
 
@@ -386,9 +411,10 @@ doing?"*. A finding that turns out to be by design moves to `DECISIONS.md`
 ## Before investigating, check the docs
 
 Read `docs/OPEN_ITEMS.md` and `docs/DECISIONS.md` before starting any
-investigation from scratch — then check their vintage. Also check upstream
-(`gnzsnz/ib-gateway-docker`) issues before concluding a bug is ours; most of
-this code is inherited.
+investigation from scratch — then check their vintage. Every bug found here is
+ours to fix; do not go looking for it in the repository this was forked from,
+and do not treat that repository's behaviour as evidence about ours. Its CI
+carries `continue-on-error: true`, so a green badge there means nothing.
 
 ---
 

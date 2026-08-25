@@ -7,8 +7,13 @@
 
 # hadolint global ignore=DL3008
 
+# The gateway image this stage reads from. Both halves are build args so a
+# build with nothing published yet - CI, or a clean clone - can point them at an
+# image it has just built instead of at ghcr.io, which is not anonymously
+# pullable. See docs/DECISIONS.md.
+ARG IB_GATEWAY_BASE_IMAGE=ghcr.io/dennisdeh/ib-gateway
 ARG IB_VERSION=$VERSION
-FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION} AS setup
+FROM ${IB_GATEWAY_BASE_IMAGE}:${IB_VERSION} AS setup
 
 WORKDIR /
 
@@ -48,7 +53,6 @@ RUN \
   rm -rf /var/lib/apt/lists/* # end
 
 # Copy files
-COPY --from=setup /usr/local/ /usr/local/
 COPY --chown=abc:abc --from=setup /home/ibgateway/Jts ${TWS_PATH}
 COPY --chown=abc:abc --from=setup /home/ibgateway/ibc ${IBC_PATH}
 COPY ./tws-scripts/start_session.sh /custom-services.d/start_session.sh

@@ -76,6 +76,13 @@ services:
     build:
       context: ./latest
       dockerfile: Dockerfile.tws
+      args:
+        # tws builds FROM the gateway image, and ghcr.io/dennisdeh/ib-gateway
+        # is not anonymously pullable. Defaulting to the tag the ib-gateway
+        # service above produces means `docker compose build ib-gateway` then
+        # `docker compose build tws` needs no registry access at all.
+        IB_GATEWAY_BASE_IMAGE: ${IB_GATEWAY_BASE_IMAGE:-ghcr.io/dennisdeh/ib-gateway}
+        IB_VERSION: ${IB_GATEWAY_TAG:-latest}
       tags:
         - "ghcr.io/dennisdeh/tws-rdesktop:latest"
     pull_policy: build
