@@ -3,20 +3,32 @@ name: Docker Image CI
 on:
   workflow_dispatch:
   push:
-    branches: ['*', '!update-*-to-*', '!IBC-update*']
+    # '**' not '*': a single star does not match '/', so every branch with a
+    # slash in its name - the usual feature/… convention - ran no CI at all.
+    branches: ['**', '!update-*-to-*', '!IBC-update*']
     tags-ignore:
       - 'v*'
   pull_request:
-    branches: ['master', '!update-*-to-*', '!IBC-update*']
+    branches: ['master']
 
 jobs:
   build:
       name: Build image
+      # `pull_request.branches` filters the BASE branch, which is always master
+      # here, so negative patterns there excluded nothing. Keeping the release
+      # bots out of CI takes a head_ref check; their bumps are built by
+      # detect-releases.yml / detect-ibc-release.yml instead.
+      if: >-
+        github.event_name != 'pull_request' ||
+        (!startsWith(github.head_ref, 'update-') &&
+        !startsWith(github.head_ref, 'IBC-update'))
       permissions:
         contents: read
       strategy:
         matrix:
           channel: ['stable', 'latest']
-      uses: dennisdeh/ib-gateway-docker/.github/workflows/build.yml@master
+      # Local ref, not @master: pinning to master meant a change to build.yml
+      # was never exercised by the pull request that made it.
+      uses: ./.github/workflows/build.yml
       with:
           channel: ${{ matrix.channel }}

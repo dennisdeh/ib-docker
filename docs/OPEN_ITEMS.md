@@ -69,16 +69,19 @@ item 7 is still open, because it needs a decision rather than a patch.*
 
 ### 4. IBC and the aarch64 JDK installed without verification — **FIXED**
 
-`Dockerfile.template` now pins `ARG IBC_SHA256` and `ARG ZULU_SHA256` and checks
-both before use, matching the treatment the IB Gateway installer already got.
-Neither vendor publishes a checksum file (both probed 2026-08-25: 404), so the
-digests are measured and pinned:
+`Dockerfile.template` now pins `ARG IBC_SHA256` and checks it before use,
+matching the treatment the IB Gateway installer already got. IBC publishes no
+checksum file (probed 2026-08-25: 404), so the digest is measured and pinned.
+Measured 2026-08-25, each against the version its file pins:
 
-- `IBCLinux-3.24.1.zip` → `d99ee28c…88bb8`
-- `zulu17.60.17-ca-fx-jre17.0.16-linux_aarch64.tar.gz` → `e74bcc2d…3b5d0`
+- `IBCLinux-3.24.1.zip` → `d99ee28c…88bb8` (`Dockerfile.template`)
+- `IBCLinux-3.24.0.zip` → `0aa44ecc…9f852` (`latest/Dockerfile`)
+- `IBCLinux-3.23.0.zip` → `0bd03c71…dac4b` (`stable/Dockerfile`)
 
-The JDK branch also had `;` separators, so a failed download or extraction did
-not stop the build; it is `&&`-chained now.
+The aarch64 Zulu JDK was also pinned as `ZULU_SHA256` at the time. Both it and
+the download are gone as of 2026-08-25 — the JDK only existed to work around the
+hardcoded x64 installer, and the arch-selected installer brings its own JRE. See
+`DECISIONS.md` #11.
 
 A pinned digest must move with `IBC_VERSION`, so
 `.github/workflows/detect-ibc-release.yml` recomputes it when it opens a bump
@@ -87,9 +90,9 @@ it downloads, hashes, rewrites the `ARG` line and greps to confirm the rewrite.
 The `sha256sum --check` form was proved both ways — `OK` on the genuine archive,
 exit 1 on a byte-appended copy.
 
-**Takes effect at the next channel regeneration.** Per `DECISIONS.md` #2 the
-templates are edited without running `update.sh`; `latest/` and `stable/` pick
-this up with the next IB Gateway release, as IBC bumps already do.
+**In effect in both channels as of 2026-08-25.** The GitHub Actions repair of
+that date had to regenerate `latest/` and `stable/`, which carried the check
+across; each channel keeps its own `IBC_VERSION`, so each pins its own digest.
 
 ### 5. Workflows: no `permissions:`, untrusted input reaching `run:` — **FIXED**
 
@@ -185,3 +188,40 @@ resolves to `inv_gateway`/`inv_bastion` on ports 9899/9898/9897 and bastion
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
 | 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere | The bastion actually publishes `SSH_LISTEN_PORT=22222` on **0.0.0.0** — every other port here is pinned to `127.0.0.1`. Reachability is the point of a bastion, but a firewall rule written for 2222 protects nothing. |
 | 16 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
+
+## GitHub Actions (2026-08-25)
+
+*Last updated: 2026-08-25.*
+
+Six defects were found and fixed the same day; what is recorded here is what is
+**still** open afterwards.
+
+### 8. Nothing has ever been published to GHCR — **open, needs a release**
+
+`ghcr.io/dennisdeh/ib-gateway` does not resolve: an anonymous pull token is
+refused and the manifest API answers `403` *(probed 2026-08-25; the same probe
+against `ghcr.io/gnzsnz/ib-gateway` lists ~200 tags)*. The cause is simply that
+no `v*` tag has ever been pushed to this fork, and `publish.yml` is the only
+thing that pushes images. `git ls-remote --tags origin 'refs/tags/v*'` returns
+nothing.
+
+Consequence beyond the empty registry: `Dockerfile.tws` builds `FROM` that
+image, so the TWS leg of CI failed at `FROM` on every run. CI no longer depends
+on it — `build.yml` now stands up a throwaway `registry:2` service, pushes the
+gateway it just built to `localhost:5000` and points the TWS build there — but
+**anyone following `template_README.md` still cannot pull either image.**
+
+To close it: push a tag shaped `v<version>-<channel>` (e.g. `v10.48.1e-latest`),
+which is the form `publish.yml` now validates and rejects anything else.
+
+### 9. Release-bot PRs sit at `action_required` — **open, a repository setting**
+
+The `Docker Image CI` runs on the `IBC-update-3.24.2` pull request are
+`action_required` on 2026-08-22, 23, 24 and 25 — queued awaiting manual
+approval, never executed. That is a repository/organisation setting
+(*Settings → Actions → Fork pull request workflows / Approval for running
+fork pull request workflows*), not something a workflow file can grant.
+
+Those runs are now filtered out anyway: `on-push-n-pr.yml` skips bot head
+branches (`DECISIONS.md` #13) and the detect workflows build the bump
+themselves, on the bump branch. The stale queued runs can be dismissed.

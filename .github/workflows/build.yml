@@ -6,6 +6,11 @@ on:
       channel:
         required: true
         type: string
+      ref:
+        description: 'Commit-ish to build. Empty means the ref that triggered the caller.'
+        required: false
+        type: string
+        default: ''
 
 env:
   CHANNEL: ${{ inputs.channel }}
@@ -23,74 +28,77 @@ jobs:
     permissions:
       contents: read
 
+    # Dockerfile.tws builds FROM the gateway image. A CI run publishes nothing,
+    # so the gateway goes to a throwaway registry on the runner and the TWS
+    # build is pointed at it. Without this the TWS leg resolves the published
+    # image - which for this fork does not exist, so it failed at FROM on every
+    # run, and even once it does exist it would test the last release rather
+    # than this commit.
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
     steps:
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          # Needed to reach the registry service on localhost:5000.
+          driver-opts: network=host
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
         with:
           platforms: linux/amd64,linux/arm64
 
+      - name: Read IB Gateway version
+        id: version
+        run: |
+          version="$(grep -m1 '^ENV IB_GATEWAY_VERSION=' "${CHANNEL}/Dockerfile" | cut -d '=' -f 2)"
+          if [ -z "$version" ]; then
+            echo "::error::no ENV IB_GATEWAY_VERSION in ${CHANNEL}/Dockerfile"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       ###############################################################
       #   Build ibgateway
       ###############################################################
-      - name: Docker metadata ibgateway
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: |
-            ghcr.io/dennisdeh/ib-gateway
-            dennisdeh/ib-gateway
-          flavor: |
-            latest=false
-          tags: |
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\w+),group=1
-            type=match,pattern=v(\d+.\d+.\w+)+\-(stable|latest),group=2
-
+      # No docker/metadata-action here any more: its tag patterns only match
+      # `v*` tags, so on a branch or PR it produced no tags at all, and the
+      # gateway now needs the one fixed local tag the TWS build resolves.
+      # publish.yml still uses it, where the tags are real.
       - name: Build ibgateway Docker image
         uses: docker/build-push-action@v7
         with:
-          push: false
-          load: false
+          push: true
           platforms: linux/amd64,linux/arm64
           context: ./${{ env.CHANNEL }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # Scoped per image and channel: the default scope is shared, so the
+          # two builds in this job used to evict each other's cache entries.
+          cache-from: type=gha,scope=ib-gateway-${{ env.CHANNEL }}
+          cache-to: type=gha,mode=max,scope=ib-gateway-${{ env.CHANNEL }}
+          tags: localhost:5000/ib-gateway:${{ steps.version.outputs.version }}
 
       ###############################################################
       #   Build tws
       ###############################################################
-      - name: Docker metadata tws
-        id: meta-tws
-        uses: docker/metadata-action@v6
-        with:
-          images: |
-            ghcr.io/dennisdeh/tws-rdesktop
-            dennisdeh/tws-rdesktop
-          flavor: |
-            latest=false
-          tags: |
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\w+),group=1
-            type=match,pattern=v(\d+.\d+.\w+)+\-(stable|latest),group=2
-
       - name: Build TWS Docker image
         uses: docker/build-push-action@v7
         with:
           push: false
           load: false
           platforms: linux/amd64,linux/arm64
-          context: ${{ env.CHANNEL }}
-          file: ${{ env.CHANNEL }}/Dockerfile.tws
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          tags: ${{ steps.meta-tws.outputs.tags }}
-          labels: ${{ steps.meta-tws.outputs.labels }}
+          context: ./${{ env.CHANNEL }}
+          file: ./${{ env.CHANNEL }}/Dockerfile.tws
+          build-args: |
+            IB_GATEWAY_IMAGE=localhost:5000/ib-gateway
+          cache-from: type=gha,scope=tws-${{ env.CHANNEL }}
+          cache-to: type=gha,mode=max,scope=tws-${{ env.CHANNEL }}

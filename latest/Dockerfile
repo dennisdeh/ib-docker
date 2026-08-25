@@ -12,15 +12,14 @@ ENV IB_GATEWAY_VERSION=10.48.1e
 ENV IB_GATEWAY_CHANNEL=latest
 ENV IBC_VERSION=3.24.0
 ARG DEBIAN_FRONTEND=noninteractive
-ARG IB_GATEWAY_FILE="ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh"
 ARG IB_GATEWAY_REPO="https://github.com/dennisdeh/ib-gateway-docker"
-ARG IB_GATEWAY_URL="${IB_GATEWAY_REPO}/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/${IB_GATEWAY_FILE}"
 ARG IBC_FILE="IBCLinux-${IBC_VERSION}.zip"
 ARG IBC_REPO="https://github.com/IbcAlpha/IBC"
 ARG IBC_URL="${IBC_REPO}/releases/download/${IBC_VERSION}/${IBC_FILE}"
-ARG ZULU_NAME=zulu17.60.17-ca-fx-jre17.0.16-linux_aarch64
-ARG ZULU_FILE=${ZULU_NAME}.tar.gz
-ARG ZULU_URL=https://cdn.azul.com/zulu/bin/${ZULU_FILE}
+# IBC publishes no checksum file, so the digest is pinned here and MUST be
+# updated with IBC_VERSION. .github/workflows/detect-ibc-release.yml recomputes
+# it when it opens a version-bump PR. Measured 2026-08-25 for 3.24.0.
+ARG IBC_SHA256=0aa44eccf9d1df3cb2a5510467cce204c09f306835a299e49a3ab9b93509f852
 
 WORKDIR /tmp/setup
 
@@ -30,27 +29,33 @@ RUN apt-get update -y && \
   curl ca-certificates unzip && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* && \
+# IB ships one native installer per architecture and each carries its own JRE.
+# The x64 one dies under qemu with "Invalid ELF image for this architecture".
   if [ "$(uname -m)" = "aarch64" ]; then \
-    curl -sSLO ${ZULU_URL} ; \
-    tar -xzf ${ZULU_FILE} -C /usr/local/ ; \
-    ln -s /usr/local/${ZULU_NAME} /usr/local/zulu17 ; \
+    ARCH="arm" ; \
+  else \
+    ARCH="x64" ; \
   fi && \
+  IB_GATEWAY_FILE="ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-${ARCH}.sh" && \
+  IB_GATEWAY_URL="${IB_GATEWAY_REPO}/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/${IB_GATEWAY_FILE}" && \
 # Install IB Gateway
 # Use this instead of "RUN curl .." to install a local file:
 #COPY ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh .
-  curl -sSOL ${IB_GATEWAY_URL} && \
-  curl -sSOL ${IB_GATEWAY_URL}.sha256 && \
-  sha256sum --check ./${IB_GATEWAY_FILE}.sha256 &&\
-  chmod a+x ./${IB_GATEWAY_FILE} && \
-  if [ "$(uname -m)" = "aarch64" ]; then \
-    app_java_home=/usr/local/zulu17 ./${IB_GATEWAY_FILE} -q -dir /root/Jts/ibgateway/${IB_GATEWAY_VERSION} ; \
-  else \
-    ./${IB_GATEWAY_FILE} -q -dir /root/Jts/ibgateway/${IB_GATEWAY_VERSION} ; \
+  curl -sSOL "${IB_GATEWAY_URL}" && \
+  curl -sSOL "${IB_GATEWAY_URL}.sha256" && \
+  sha256sum --check "./${IB_GATEWAY_FILE}.sha256" && \
+  chmod a+x "./${IB_GATEWAY_FILE}" && \
+  "./${IB_GATEWAY_FILE}" -q -dir "/root/Jts/ibgateway/${IB_GATEWAY_VERSION}" && \
+# The installer records the absolute path of the JRE it used; the next stage
+# moves /root to /home/ibgateway, so point it where the JRE will actually be.
+  if [ -d "/root/Jts/ibgateway/${IB_GATEWAY_VERSION}/jre" ]; then \
+    echo "/home/ibgateway/Jts/ibgateway/${IB_GATEWAY_VERSION}/jre" > "/root/Jts/ibgateway/${IB_GATEWAY_VERSION}/.install4j/inst_jre.cfg" ; \
   fi && \
   # Install IBC
-  curl -sSOL ${IBC_URL} && \
+  curl -sSOL "${IBC_URL}" && \
+  echo "${IBC_SHA256}  ${IBC_FILE}" | sha256sum --check - && \
   mkdir /root/ibc && \
-  unzip ./${IBC_FILE} -d /root/ibc && \
+  unzip "./${IBC_FILE}" -d /root/ibc && \
   chmod -R u+x /root/ibc/*.sh && \
   chmod -R u+x /root/ibc/scripts/*.sh
 

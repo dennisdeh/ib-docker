@@ -16,9 +16,12 @@ jobs:
     permissions:
       contents: write        # gh release create, push the bump branch
       pull-requests: write   # gh pr create
-    outputs:
-      update: ${{ steps.check-update.outputs.has_update }}
-      channel: ${{ matrix.channel }}
+    # No `outputs:` here on purpose. This is a matrix job, and every leg writes
+    # to the same job-output slot - last one to finish wins. `update` and
+    # `channel` used to be read by the build job below, so when exactly one
+    # channel had a release the build either skipped it or built the channel
+    # that had not changed. The legs hand their result to the `collect` job as
+    # an artifact instead, which keeps them separate.
     strategy:
       fail-fast: true
       matrix:
@@ -145,13 +148,73 @@ jobs:
 
           gh pr create --base master --fill
 
+      - name: Record the bump for the build job
+        if: ${{ steps.check-update.outputs.has_update == 'true' }}
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
+        run: |
+          mkdir -p bumped
+          echo "update-${CHANNEL}-to-${BUILD_VERSION}" > "bumped/${CHANNEL}"
+
+      - name: Upload the bump record
+        if: ${{ steps.check-update.outputs.has_update == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bumped-${{ matrix.channel }}
+          path: bumped/
+          retention-days: 1
+
+
+  collect:
+    name: Collect bumped channels
+    needs: detect-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      any: ${{ steps.set.outputs.any }}
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - name: Download the bump records
+        uses: actions/download-artifact@v4
+        continue-on-error: true   # no artifacts at all when nothing was bumped
+        with:
+          pattern: bumped-*
+          merge-multiple: true
+          path: bumped
+
+      - name: Build the channel list
+        id: set
+        run: |
+          include='[]'
+          for f in bumped/*; do
+            [ -e "$f" ] || continue
+            include="$(jq -c \
+              --arg c "$(basename "$f")" \
+              --arg r "$(cat "$f")" \
+              '. + [{channel: $c, ref: $r}]' <<< "$include")"
+          done
+          echo "matrix={\"include\":${include}}" >> "$GITHUB_OUTPUT"
+          if [ "$include" = '[]' ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+
 
   build:
     name: Call build workflow
-    needs: detect-release
-    if: needs.detect-release.outputs.update == 'true'
+    needs: collect
+    if: needs.collect.outputs.any == 'true'
     permissions:
       contents: read
-    uses: dennisdeh/ib-gateway-docker/.github/workflows/build.yml@master
+    strategy:
+      matrix: ${{ fromJSON(needs.collect.outputs.matrix) }}
+    # Local ref so the caller's own build.yml is used, and `ref:` so this builds
+    # the bump branch. Pointing at @master with no ref built master - the code
+    # without the bump - which validated nothing.
+    uses: ./.github/workflows/build.yml
     with:
-        channel: ${{ needs.detect-release.outputs.channel }}
+        channel: ${{ matrix.channel }}
+        ref: ${{ matrix.ref }}

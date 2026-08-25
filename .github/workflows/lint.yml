@@ -10,7 +10,9 @@ name: Lint
 on:
   workflow_dispatch:
   push:
-    branches: ['*', '!update-*-to-*', '!IBC-update*']
+    # '**' not '*': a single star does not match '/', so branches with a
+    # slash in the name were never linted.
+    branches: ['**', '!update-*-to-*', '!IBC-update*']
     tags-ignore:
       - 'v*'
   pull_request:

@@ -7,8 +7,12 @@
 
 # hadolint global ignore=DL3008
 
+# The base is the gateway image this repo publishes. CI overrides
+# IB_GATEWAY_IMAGE so it builds against the gateway from the same commit
+# instead of whatever was last released - see .github/workflows/build.yml.
+ARG IB_GATEWAY_IMAGE=ghcr.io/dennisdeh/ib-gateway
 ARG IB_VERSION=10.48.1e
-FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION} AS setup
+FROM ${IB_GATEWAY_IMAGE}:${IB_VERSION} AS setup
 
 WORKDIR /
 

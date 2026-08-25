@@ -96,6 +96,11 @@ feature, not a bug.
   release propagates it. As of 2026-08-25: templates `3.24.1`, `latest/`
   `3.24.0`, `stable/` `3.23.0`. This is by design — do not "fix" it by running
   `update.sh` unless a version bump is what you were actually asked for.
+- **`IBC_SHA256` drifts with it, and must.** Each channel Dockerfile pins the
+  digest of *its own* `IBC_VERSION`, so the three files carry three different
+  digests while the drift above lasts. After running `update.sh` for an
+  unrelated reason, restore both the version *and* the digest per channel — a
+  version restored without its digest fails the build at verification.
 - **Ports: the number the host publishes is the socat port, not the API port.**
   `set_ports()` in `image-files/scripts/common.sh` binds IB Gateway's API to
   4002 (paper) / 4001 (live) on the container's own loopback, and socat forwards
@@ -278,11 +283,15 @@ When the suite lands it should be **`bats-core` + Docker smoke tests**:
   releases and downloaded by `Dockerfile.template` from `dennisdeh/…`, with a
   `sha256sum --check`. A build failing at the checksum step usually means the
   release asset is missing, not that the Dockerfile is wrong.
-- **IBC and the aarch64 Zulu JDK ship no checksum file, so their digests are
-  pinned in `Dockerfile.template` as `IBC_SHA256` / `ZULU_SHA256`.** `IBC_SHA256`
-  must move with `IBC_VERSION` — `detect-ibc-release.yml` recomputes it — and
-  `ZULU_SHA256` must move with `ZULU_NAME`. Changing either version without its
-  digest fails the build at verification, which is the intended behaviour.
+- **IBC ships no checksum file, so its digest is pinned as `IBC_SHA256`.** It
+  must move with `IBC_VERSION` — `detect-ibc-release.yml` recomputes it when it
+  opens a bump PR. Changing the version without the digest fails the build at
+  verification, which is the intended behaviour. *(The aarch64 Zulu JDK and its
+  `ZULU_SHA256` are gone as of 2026-08-25 — see `DECISIONS.md` #11.)*
+- **The installer is chosen per architecture: `-arm.sh` on `aarch64`, `-x64.sh`
+  otherwise.** The x64 installer carries an x86-64 JRE and dies under QEMU with
+  `Invalid ELF image for this architecture`, so hardcoding it turns the arm64
+  leg of every build red. Both assets are attached to each release.
 
 ---
 

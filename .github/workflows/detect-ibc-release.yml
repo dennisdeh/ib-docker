@@ -22,6 +22,8 @@ jobs:
       pull-requests: write   # gh pr create
     outputs:
       update: ${{ steps.verify_latest.outputs.update }}
+      branch: ${{ steps.verify_branch.outputs.BRANCH }}
+      branch_exists: ${{ steps.verify_branch.outputs.BRANCH_EXISTS }}
     strategy:
       fail-fast: true
 
@@ -74,15 +76,21 @@ jobs:
           latest="$IBC_LATEST"
           prefix="$BRANCH_PREFIX"
           search="${prefix}-${latest}"
+          echo "BRANCH=${search}" >> "$GITHUB_OUTPUT"
 
-          # Check if branch exists
-          if [ "$(git branch -r --list | grep origin/${search})" ]; then
-            echo "BRANCH_EXISTS=true" >> $GITHUB_OUTPUT
-          # Check if PR already exists for this branch
-          elif gh pr list --base master --head "${search}" --state open --json number | grep -q number; then
-            echo "BRANCH_EXISTS=true" >> $GITHUB_OUTPUT
+          # `git branch -r` was the old test and it never matched: the checkout
+          # is shallow and single-branch, so no origin/* ref for the bump branch
+          # exists locally however many times it has been pushed. The step then
+          # reported "does not exist" every day, and `gh pr create` failed on
+          # the pull request that was already open. Ask the remote instead.
+          if git ls-remote --exit-code --heads origin "$search" >/dev/null; then
+            echo "BRANCH_EXISTS=true" >> "$GITHUB_OUTPUT"
+          # Belt and braces: the branch may have been deleted with the pull
+          # request still open.
+          elif [ "$(gh pr list --base master --head "$search" --state open --json number --jq 'length')" != "0" ]; then
+            echo "BRANCH_EXISTS=true" >> "$GITHUB_OUTPUT"
           else
-            echo "BRANCH_EXISTS=false" >> $GITHUB_OUTPUT
+            echo "BRANCH_EXISTS=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create Pull Request
@@ -122,7 +130,7 @@ jobs:
 
           git add Dockerfile.template Dockerfile.tws.template
           git commit -m "Update IBC from ${ver} to ${latest}"
-          git push --set-upstream origin "$branch" --force
+          git push --set-upstream origin "$branch"
 
           gh pr create --base master --fill
 
@@ -130,12 +138,20 @@ jobs:
   build:
     name: Call build workflow
     needs: detect-release
-    if: needs.detect-release.outputs.update == 'true'
+    # Only when a bump branch was just created. Gating on `update` alone
+    # rebuilt the same bump every morning for as long as its PR stayed open.
+    if: >-
+      needs.detect-release.outputs.update == 'true' &&
+      needs.detect-release.outputs.branch_exists == 'false'
     permissions:
       contents: read
     strategy:
       matrix:
         channel: ['stable', 'latest']
-    uses: dennisdeh/ib-gateway-docker/.github/workflows/build.yml@master
+    # Local ref so the caller's own build.yml is used, and `ref:` so this
+    # builds the bump. Pointing at @master with no ref built master - the code
+    # without the bump - which validated nothing.
+    uses: ./.github/workflows/build.yml
     with:
         channel: ${{ matrix.channel }}
+        ref: ${{ needs.detect-release.outputs.branch }}
