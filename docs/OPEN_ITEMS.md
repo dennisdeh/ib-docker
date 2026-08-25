@@ -311,6 +311,35 @@ redundant; its PR can be closed. `detect-releases.yml` will not reopen one,
 because it keys off the existence of the `ibgateway-stable@10.45.1j` release,
 which already exists.
 
+### 19. The `linux/arm64` leg fails intermittently in `apt-get`, before the build proper — OPEN
+
+*Observed 2026-08-25 on the first CI run of `worktree-decouple-upstream-fix-ci`.*
+
+The `stable` job failed in the setup `RUN` with **exit code 100**, 22 seconds
+into the build step, while the `latest` job was still building normally at 1:19
+and was cancelled by `fail-fast`.
+
+**Exit 100 is `apt-get`'s, and 22 seconds is too early to have reached
+anything else** — not the installer download, not `sha256sum --check`, not the
+IB installer, not the JVM check. It is `apt-get update`/`install` failing
+against `ports.ubuntu.com` under QEMU: a runner or mirror blip.
+
+This matters because a red `arm64` leg now has three quite different causes, and
+the exit code and elapsed time tell them apart at a glance:
+
+| symptom | cause |
+|---|---|
+| exit 255, `jre/bin/java: not found` | the x64-installer-on-aarch64 bug — **fixed**, see #17 |
+| exit 1 at the `java -version` step | a JVM did not survive into the runtime stage, see #18 and `DECISIONS.md` #18 |
+| exit 100 within ~30 s, in `apt-get` | transient; re-run the job |
+
+Retry before investigating. The same `stable`/`linux/arm64` build from the same
+tree completed locally under QEMU on 2026-08-25, reporting Zulu `17.0.17`.
+
+If this becomes frequent rather than occasional, the fix is a retry around the
+`apt-get` step, not `continue-on-error` on the job — see #1 for why that is
+never the answer here.
+
 ## Low / accepted risk (record the decision if you accept it)
 
 | # | item | note |
