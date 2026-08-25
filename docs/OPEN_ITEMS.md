@@ -214,6 +214,33 @@ gateway it just built to `localhost:5000` and points the TWS build there — but
 To close it: push a tag shaped `v<version>-<channel>` (e.g. `v10.48.1e-latest`),
 which is the form `publish.yml` now validates and rejects anything else.
 
+### 10. `stable` points at a release with no arm installer — **fix shipped, needs one run**
+
+`ibgateway-stable@10.45.1g` was cut 2026-05-31. `archs="x64 arm"` was added to
+`detect-releases.yml` in f1fed1c on 2026-06-05 and nothing ever went back for
+the releases already published, so that tag carries x64 assets only *(confirmed
+via the releases API 2026-08-25)*. Every release from June onward has both —
+`ibgateway-latest@10.48.1e` does.
+
+Nobody noticed because `Dockerfile.template` hardcoded the x64 installer, so the
+arm asset was never requested; its download count was 0. With the installer now
+chosen per architecture the arm64 leg of the `stable` build 404s:
+
+```text
+sha256sum: ./ibgateway-10.45.1g-standalone-linux-arm.sh.sha256:
+           no properly formatted checksum lines found
+```
+
+That message was itself a defect — `curl` had no `--fail`, so the 404 page was
+saved as the checksum file. `curl -fsSOL` now reports the 404.
+
+`detect-releases.yml` gained a *Backfill installers missing from the existing
+release* step, guarded on `has_update == false` so the installer IB serves is
+known to match the tag. It closes the gap on the next daily 06:00 run, or
+immediately via `workflow_dispatch`. **Until it runs, the arm64 leg of the
+`stable` build stays red.** The `latest` channel and both amd64 legs are
+unaffected.
+
 ### 9. Release-bot PRs sit at `action_required` — **open, a repository setting**
 
 The `Docker Image CI` runs on the `IBC-update-3.24.2` pull request are

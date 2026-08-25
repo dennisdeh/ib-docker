@@ -60,6 +60,36 @@ jobs:
             echo "has_update=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # `archs="x64 arm"` arrived in f1fed1c on 2026-06-05. Releases cut before
+      # that carry x64 assets only, and nothing ever went back for them - which
+      # is why `stable` still points at ibgateway-stable@10.45.1g (2026-05-31)
+      # and the arm64 leg of every build 404s on the installer. This runs only
+      # when has_update is false, i.e. when the release for the version IB is
+      # serving right now already exists, so the current per-channel installer
+      # is the correct binary for that tag.
+      - name: Backfill installers missing from the existing release
+        if: ${{ steps.check-update.outputs.has_update == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
+        run: |
+          tag="ibgateway-${CHANNEL}@${BUILD_VERSION}"
+          assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+          for arch in x64 arm; do
+            dest="ibgateway-${BUILD_VERSION}-standalone-linux-${arch}.sh"
+            if grep -qxF "$dest" <<< "$assets" &&
+               grep -qxF "${dest}.sha256" <<< "$assets"; then
+              continue
+            fi
+            echo "::notice::backfilling ${arch} installer for ${tag}"
+            curl -sSLf --output "$dest" \
+              "https://download2.interactivebrokers.com/installers/ibgateway/${CHANNEL}-standalone/ibgateway-${CHANNEL}-standalone-linux-${arch}.sh"
+            sha256sum "$dest" > "${dest}.sha256"
+            gh release upload "$tag" "$dest" "${dest}.sha256" --clobber
+            rm -f "$dest" "${dest}.sha256"
+          done
+
       - name: Download
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
         env:

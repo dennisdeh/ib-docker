@@ -25,6 +25,9 @@ jobs:
       permissions:
         contents: read
       strategy:
+        # Both channels' results matter; the default cancels the survivor and
+        # reports it as "cancelled", which hides whether it would have passed.
+        fail-fast: false
         matrix:
           channel: ['stable', 'latest']
       # Local ref, not @master: pinning to master meant a change to build.yml

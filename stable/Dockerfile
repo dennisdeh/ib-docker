@@ -31,6 +31,8 @@ RUN apt-get update -y && \
   rm -rf /var/lib/apt/lists/* && \
 # IB ships one native installer per architecture and each carries its own JRE.
 # The x64 one dies under qemu with "Invalid ELF image for this architecture".
+# curl is --fail here: without it a missing release asset is saved as GitHub's
+# 404 page and only shows up as "no properly formatted checksum lines found".
   if [ "$(uname -m)" = "aarch64" ]; then \
     ARCH="arm" ; \
   else \
@@ -41,8 +43,8 @@ RUN apt-get update -y && \
 # Install IB Gateway
 # Use this instead of "RUN curl .." to install a local file:
 #COPY ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh .
-  curl -sSOL "${IB_GATEWAY_URL}" && \
-  curl -sSOL "${IB_GATEWAY_URL}.sha256" && \
+  curl -fsSOL "${IB_GATEWAY_URL}" && \
+  curl -fsSOL "${IB_GATEWAY_URL}.sha256" && \
   sha256sum --check "./${IB_GATEWAY_FILE}.sha256" && \
   chmod a+x "./${IB_GATEWAY_FILE}" && \
   "./${IB_GATEWAY_FILE}" -q -dir "/root/Jts/ibgateway/${IB_GATEWAY_VERSION}" && \
@@ -52,7 +54,7 @@ RUN apt-get update -y && \
     echo "/home/ibgateway/Jts/ibgateway/${IB_GATEWAY_VERSION}/jre" > "/root/Jts/ibgateway/${IB_GATEWAY_VERSION}/.install4j/inst_jre.cfg" ; \
   fi && \
   # Install IBC
-  curl -sSOL "${IBC_URL}" && \
+  curl -fsSOL "${IBC_URL}" && \
   echo "${IBC_SHA256}  ${IBC_FILE}" | sha256sum --check - && \
   mkdir /root/ibc && \
   unzip "./${IBC_FILE}" -d /root/ibc && \
