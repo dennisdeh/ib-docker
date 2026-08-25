@@ -118,35 +118,41 @@ Verified 2026-08-25 with `docker compose config`: the values now appear in the
 service definition. **The running `inv_bastion` container does not pick this up
 until it is recreated** — it was deliberately not restarted.
 
-### 7. `SSH_REMOTE_PORT` does the opposite of what the documentation says
+### 7. `SSH_REMOTE_PORT` did the opposite of what the documentation said — **FIXED (documentation)**
 
-**Still open — needs a decision, see below.**
+`template_README.md` documented it as *"Remote port for ssh tunnel"*. In
+`ssh -R bind:port:host:hostport` the **first** port is the one opened on the
+server, and `run_ssh.sh` passes `API_PORT` there — so `SSH_REMOTE_PORT` is
+really the *container-local* port the tunnel dials. `start_ssh()` defaults it to
+`API_PORT`, which made the two readings coincide and hid the discrepancy.
+`SSH_VNC_PORT` and `SSH_RDP_PORT` had the same inverted description.
 
-`template_README.md` documents it as *"Remote port for ssh tunnel"*. In
-`image-files/scripts/run_ssh.sh` the tunnel is
+Repaired on the documentation side by decision (2026-08-25), because the code
+path is live here (`SSH_TUNNEL=yes`) and changing tunnel semantics to satisfy a
+doc string risks the gateway's connectivity for no functional gain:
 
-```bash
-ssh -TNR 127.0.0.1:${_LOCAL_PORT}:localhost:${_REMOTE_PORT}   # _LOCAL_PORT=$API_PORT, _REMOTE_PORT=$SSH_REMOTE_PORT
+- all three table rows in `template_README.md` now say which side each port is
+  on, and that setting `SSH_REMOTE_PORT` to "the port I want on the server"
+  does not work;
+- `run_ssh.sh` renames `_LOCAL_PORT`/`_REMOTE_PORT` to `_REMOTE_BIND_PORT`/
+  `_LOCAL_TARGET_PORT`, matching ssh's own terminology, with the explanation at
+  the line;
+- `common.sh` comments corrected for the same three variables.
+
+**Behaviour is unchanged, and that was verified rather than assumed:** the ssh
+command string produced by the old and new scripts is byte-identical, both with
+the default and with a custom `SSH_REMOTE_PORT=9999`:
+
+```text
+ssh -o ServerAliveInterval=20 -TNR 127.0.0.1:4002:localhost:9999  ibgateway@bastion
 ```
 
-In `-R bind:port:host:hostport`, the **first** port is what is opened on the
-remote server. So `API_PORT` is the remote port and `SSH_REMOTE_PORT` is the
-*container-local* target. `start_ssh()` defaults `SSH_REMOTE_PORT` to
-`API_PORT`, which makes the two readings identical and hides the bug — until
-someone sets a custom value, at which point the tunnel binds the wrong port
-remotely and forwards to a port nothing listens on, while reporting success.
+That line is also the clearest statement of the trap: the remote bind stays
+`4002`; only the local target moved.
 
-Two mutually exclusive repairs, and the choice is not the agent's to make:
-
-- **Fix the code** so the variable means what the documentation says. Correct,
-  but it changes behaviour for anyone already compensating for the bug, and
-  this deployment runs with `SSH_TUNNEL=yes` — a wrong move here breaks the
-  live gateway's connectivity at its next restart.
-- **Fix the documentation** and rename `_LOCAL_PORT`/`_REMOTE_PORT` to match
-  ssh's own terminology. Zero behavioural risk, and honest about what the code
-  does today.
-
-Either way it wants the first `bats` regression test.
+The scripts were copied into `latest/` and `stable/` directly rather than via
+`update.sh`, to keep the deliberate version drift of `DECISIONS.md` #2 — see
+`DECISIONS.md` #10.
 
 ### 8. The documented onboarding path did not work — **FIXED**
 

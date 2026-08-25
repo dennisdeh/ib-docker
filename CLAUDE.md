@@ -102,6 +102,12 @@ feature, not a bug.
   it to 4004 / 4003, which is what compose publishes. Locally that is
   `9898 → 4004` (paper) and `9899 → 4003` (live). A client pointed at container
   port 4002 will never connect; that is correct behaviour.
+- **`SSH_REMOTE_PORT`, `SSH_VNC_PORT` and `SSH_RDP_PORT` name the port *inside
+  the container*, not on the server.** In `ssh -R bind:port:host:hostport` the
+  first port is the remote one, and `run_ssh.sh` always passes `API_PORT` (or
+  5900 / 3389) there. Setting `SSH_REMOTE_PORT` to "the port I want on the
+  bastion" silently forwards to a dead local port while reporting success. The
+  default makes the two coincide, which is why this hides so well.
 - **`file_env VAR`** lets `VAR_FILE` supply a secret from a file, and **errors
   out if both `VAR` and `VAR_FILE` are set**. `unset_env` then clears the value
   before IBC starts, so a password read from a file is not in the environment of

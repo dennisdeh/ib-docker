@@ -213,11 +213,11 @@ All environment variables are common between ibgateway and TWS image, unless spe
 | `SSH_ALIVE_COUNT`  | [ssh](https://manpages.ubuntu.com/manpages/noble/en/man1/ssh.1.html) `ServerAliveCountMax` setting. Don't set it in `SSH_OPTIONS` as this behavior is undefined. | **not defined** |
 | `SSH_PASSPHRASE`   | passphrase for ssh keys. If set the container will start ssh-agent and add ssh keys   | **not defined**   |
 | `SSH_PASSPHRASE_FILE`   | file containing passphrase for ssh keys. If set the container will start ssh-agent and add ssh keys   | **not defined**   |
-| `SSH_REMOTE_PORT`   | Remote port for ssh tunnel. If `TRADING_MODE=both` then `SSH_REMOTE_PORT` is set to paper port `4002/7498`  | Same port than IB gateway `4001/4002` or `7497/7498` |
+| `SSH_REMOTE_PORT`   | **Container-local** port the tunnel forwards to - *not* the port opened on the server, which is always the API port. Leave it unset unless the API listens somewhere other than its default port; setting it to the port you want on the server does not work. If `TRADING_MODE=both` it is reset to the paper port `4002/7498`.  | Same port than IB gateway `4001/4002` or `7497/7498` |
 | `SSH_USER_TUNNEL`   | `user@server` to connect to    | **not defined**   |
 | `SSH_RESTART`  | Number of seconds to wait before restarting tunnel in case of disconnection.  | 5  |
-| `SSH_VNC_PORT`   | If set, then a remote ssh tunnel will be created with remote port equal to `SSH_VNC_PORT`. Specific to ibgateway, ignored by TWS.  | **not defined**   |
-| `SSH_RDP_PORT`  | If set, then a remote ssh tunnel will be created with remote port equal to `SSH_RDP_PORT`. Specific to TWS, ignored by ibgateway.  | **not defined** |
+| `SSH_VNC_PORT`   | If set, a tunnel is created that opens port `5900` **on the server** and forwards it to `SSH_VNC_PORT` **inside the container** - so it must be where x11vnc listens (`5900`). Specific to ibgateway, ignored by TWS.  | **not defined**   |
+| `SSH_RDP_PORT`  | If set, a tunnel is created that opens port `3389` **on the server** and forwards it to `SSH_RDP_PORT` **inside the container** - so it must be where xrdp listens (`3389`). Specific to TWS, ignored by ibgateway.  | **not defined** |
 | `PUID` | User `uid` for user `abc` (linuxserver default user name). Specific to TWS, ignored by ibgateway. | 1000   |
 | `PGID` | User `gid` for user `abc` (linuxserver default user name). Specific to TWS, ignored by ibgateway.  | 1000   |
 | `PASSWD` | Password for user `abc` (linuxserver default user name). Specific to TWS, ignored by ibgateway. | abc  |

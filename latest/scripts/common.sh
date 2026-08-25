@@ -223,18 +223,24 @@ start_ssh() {
 	fi
 
 	if [ -z "$SSH_REMOTE_PORT" ]; then
-		# by default remote port is same than API_PORT
+		# SSH_REMOTE_PORT is the container-local port the tunnel forwards to,
+		# not the port opened on the server - that one is always API_PORT.
+		# Defaulting it to API_PORT makes the two coincide, which is why the
+		# misleading name has never mattered in the default setup.
 		SSH_REMOTE_PORT="$API_PORT"
 	fi
 	echo ".> SSH_REMOTE_PORT set to :${SSH_REMOTE_PORT}"
 
 	# set vnc ssh tunnel
 	if [ "$GATEWAY_OR_TWS" = "gateway" ] && [ -n "$SSH_VNC_PORT" ] && pgrep x11vnc >/dev/null; then
-		# set ssh tunnel for vnc
+		# Same shape as above: 5900 is opened on the server, SSH_VNC_PORT is
+		# the container-local port dialled - so it must be where x11vnc
+		# actually listens (5900), not the port you want on the server.
 		SSH_SCREEN="-R 127.0.0.1:5900:localhost:$SSH_VNC_PORT"
 		echo ".> SSH_VNC_TUNNEL set to :${SSH_SCREEN}"
 	elif [ "$GATEWAY_OR_TWS" = "tws" ] && [ -n "$SSH_RDP_PORT" ]; then
-		# set ssh tunnel for rdp
+		# As for VNC: 3389 is opened on the server, SSH_RDP_PORT is the
+		# container-local port dialled.
 		SSH_SCREEN="-R 127.0.0.1:3389:localhost:$SSH_RDP_PORT"
 		echo ".> SSH_RDP_TUNNEL set to :${SSH_SCREEN}"
 	else
