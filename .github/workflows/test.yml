@@ -1,0 +1,31 @@
+name: Test
+
+# The bats unit suite: offline, no credentials, no contact with Interactive
+# Brokers, seconds to run. tests/run.sh runs bats as a container, so this job
+# needs only Docker. The container suite is not run here - it needs a built
+# gateway image, which this workflow does not produce.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['*', '!update-*-to-*', '!IBC-update*']
+    tags-ignore:
+      - 'v*'
+  pull_request:
+    branches: ['master']
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: bats unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run unit tests
+        run: tests/run.sh unit

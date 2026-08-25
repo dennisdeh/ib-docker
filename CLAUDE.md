@@ -40,7 +40,7 @@ docker compose config   # validates .env + compose wiring without starting anyth
   several volume mounts use `$PWD` — which is read from `.env`, not from the
   shell. Running compose from a subdirectory silently mounts the wrong paths.
 - **Not installed on this machine:** `gh`, `pre-commit`, `bats`, and none of the
-  linter binaries. The hook set is configured to need only Docker (every linter
+  linter binaries. `tests/run.sh` runs `bats` as a container for you. The hook set is configured to need only Docker (every linter
   uses its `*-docker` variant), so `pre-commit` itself is the one thing to add:
   `python3 -m venv .venv && .venv/bin/pip install pre-commit`. **There is no
   `gh` — never plan a step around it.** PRs are opened in the browser, or the
@@ -151,10 +151,9 @@ feature, not a bug.
 
 ## Testing
 
-There is no automated test suite yet. Building one is an open item — see
-`docs/OPEN_ITEMS.md`. Until it exists, "verified" means the three checks below,
-run **in the foreground with a bounded timeout**, and **reported with what
-actually ran**. "Lint passes" without naming the files checked is not a report.
+"Verified" means the checks below, run **in the foreground with a bounded
+timeout**, and **reported with what actually ran**. "Tests pass" without counts,
+or "lint passes" without naming what was checked, is not a report.
 
 ### 1. Lint — fast, offline, always
 
@@ -223,28 +222,48 @@ them** (`inv_visualisation`, and anything talking to `127.0.0.1:9898`).
   window (`AUTO_RESTART_TIME`), IB server maintenance, an expired 2FA prompt, a
   stale SSH tunnel, IB's weekend downtime.
 
-### The suite to build
+### 4. The `bats` suite
 
-When the suite lands it should be **`bats-core` + Docker smoke tests**:
+```bash
+tests/run.sh              # unit — offline, no credentials, seconds
+tests/run.sh container    # needs a built gateway image; starts a throwaway one
+tests/run.sh all
+```
 
-- Unit level: `bats` over the pure functions in `image-files/scripts/common.sh`
-  (`set_ports`, `file_env`, `unset_env`, `set_java_heap`) — sourced directly, no
-  container, no network, no credentials. This is the fast offline selector.
-- Smoke level: build the image, start it under a **throwaway compose project on
-  unused ports**, and assert the published socat port accepts a TCP connection
-  and the log reaches a known IBC state. Credentials required; keep it opt-in
-  and never pointed at the live account by default.
-- Run `bats` itself as a container (`bats/bats:latest`) — it is not installed.
+`bats` is not installed here either, so `tests/run.sh` runs it as a container.
+**`tests/run.sh unit` is the fast offline selector** and the one CI runs
+(`.github/workflows/test.yml`).
+
+- `tests/unit/` sources the pure functions directly — no container, no network,
+  no credentials. 19 tests as of 2026-08-25.
+- `tests/container/` starts one throwaway container from an existing image with
+  a command override that runs **only** the port-forwarding half of `run.sh`.
+  It never starts IBC, so it needs no credentials and never contacts IB — which
+  also means it can never generate a failed login against the account.
+- Nothing in the suite touches `inv_gateway`/`inv_bastion`.
+
+Two traps, both of which cost a debugging round already:
+
+- **bats re-sources a test file in a new process for every test**, so `$$` and
+  anything derived from it differ between `setup_file` and the tests. Use a
+  constant name for a shared container.
+- **`docker exec` against a container that never started also fails**, so a
+  negative assertion passes for the wrong reason. `assert_container_running`
+  exists for that; call it in every container test.
+
+When adding a test, mutate the code it covers and watch it go red before
+trusting it — see *Debugging*.
 
 ## Debugging
 
 - **State the root cause with evidence — a log line, a reproducing command, a
   failing check — before editing anything.** A patch without a stated cause is a
   guess with a diff attached.
-- **Every fix ships a test demonstrated to FAIL against the unfixed code.** Once
-  `bats` exists, that means a red run pasted into the report. Until then, it
-  means a reproduction command whose output changes across the fix, shown both
-  ways.
+- **Every fix ships a test demonstrated to FAIL against the unfixed code**, and
+  a new test must be shown red before it is trusted. Mutate the thing it covers
+  — flip the port, delete the guard — run the suite, paste the red line, revert
+  the mutation with `git checkout --`. A test that has only ever been green
+  proves the harness runs, not that it measures anything.
 - Container-side logs first: `docker logs inv_gateway` (read-only, safe, no
   restart). IBC's own log is inside the container under the IBC path.
 - **`pkill` in this repo is scoped, and must stay that way.** `stop_ibc()` in
