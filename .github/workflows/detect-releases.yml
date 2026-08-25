@@ -60,13 +60,12 @@ jobs:
             echo "has_update=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # `archs="x64 arm"` arrived in f1fed1c on 2026-06-05. Releases cut before
-      # that carry x64 assets only, and nothing ever went back for them - which
-      # is why `stable` still points at ibgateway-stable@10.45.1g (2026-05-31)
-      # and the arm64 leg of every build 404s on the installer. This runs only
-      # when has_update is false, i.e. when the release for the version IB is
-      # serving right now already exists, so the current per-channel installer
-      # is the correct binary for that tag.
+      # Repairs a release whose asset upload only partly succeeded - the
+      # `Create release` step below uploads four files and is not atomic.
+      # Guarded on has_update being false, i.e. the release for the version IB
+      # is serving right now already exists, because IB serves only the current
+      # version per channel: for any older tag there is no source to fetch
+      # from, so a gap there cannot be repaired at all (see OPEN_ITEMS #10).
       - name: Backfill installers missing from the existing release
         if: ${{ steps.check-update.outputs.has_update == 'false' }}
         env:

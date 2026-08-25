@@ -234,12 +234,27 @@ sha256sum: ./ibgateway-10.45.1g-standalone-linux-arm.sh.sha256:
 That message was itself a defect — `curl` had no `--fail`, so the 404 page was
 saved as the checksum file. `curl -fsSOL` now reports the 404.
 
-`detect-releases.yml` gained a *Backfill installers missing from the existing
-release* step, guarded on `has_update == false` so the installer IB serves is
-known to match the tag. It closes the gap on the next daily 06:00 run, or
-immediately via `workflow_dispatch`. **Until it runs, the arm64 leg of the
-`stable` build stays red.** The `latest` channel and both amd64 legs are
-unaffected.
+**It cannot be backfilled.** IB serves only the current version per channel,
+and that is now `10.45.1j` — a backfill run dispatched 2026-08-25 (run
+32856566988) resolved `BUILD_VERSION=10.45.1j`, found
+`ibgateway-stable@10.45.1j` already complete with both arches, and correctly
+did nothing. There is nowhere left to obtain the `10.45.1g` arm installer, so
+the arm64 `stable` build can never succeed at that pin.
+
+The cause is that **the channels are pinned several releases behind**: eight
+release-bot PRs are open and unmerged, the oldest from 2026-07-21. `stable` is
+on `10.45.1g` with #10 (`10.45.1i`) and #14 (`10.45.1j`) waiting; `latest` is on
+`10.48.1e` with #11, #12, #13, #15 and #16 waiting. Merging #14 moves `stable`
+to a release that has both arches and turns its arm64 leg green. That is a
+version bump, so it is the maintainer's call, not a CI repair.
+
+`latest` is unaffected: `ibgateway-latest@10.48.1e` (2026-07-14) has both
+arches. Both amd64 legs are unaffected.
+
+`detect-releases.yml` still gained a *Backfill installers missing from the
+existing release* step, but its scope is narrower than it first appeared: it
+repairs a release whose four-file upload only partly succeeded. It cannot
+reach back to a version IB has stopped serving.
 
 ### 9. Release-bot PRs sit at `action_required` — **open, a repository setting**
 
