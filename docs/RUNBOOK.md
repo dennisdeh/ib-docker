@@ -5,16 +5,30 @@ documented in `template_README.md`; this file is about *this* deployment.
 
 *Last updated: 2026-08-25*
 
-## What runs here
+## What runs, and from where
+
+**Not from this checkout.** `inv_gateway` and `inv_bastion` are started from a
+vendored copy of this project inside the Investio repository:
+
+```text
+/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker/docker-compose.yml
+```
+
+*(Read from the containers' `com.docker.compose.project.config_files` label,
+2026-08-25.)* Investio is expected to consume this repository later.
 
 | container | image | role |
 |---|---|---|
-| `inv_gateway` | `ghcr.io/dennisdeh/ib-gateway:latest` (built from `./latest`) | IB Gateway + IBC under Xvfb |
-| `inv_bastion` | `dennisdeh/bastion:local-resolute` (built from `./bastion`) | SSH jump host for the tunnel |
+| `inv_gateway` | `ghcr.io/dennisdeh/ib-gateway:latest` | IB Gateway + IBC under Xvfb |
+| `inv_bastion` | `dennisdeh/bastion:local-resolute` | SSH jump host for the tunnel |
 
 Other services on this machine (`inv_visualisation`, `inv_db`, `inv_redis`,
-`inv_ntfy`) consume the gateway's API port. **Restarting the gateway interrupts
-them** — see the runtime rules in `CLAUDE.md`.
+`inv_ntfy`) consume the gateway's API port.
+
+> Both compose files declare `name: inv_ibkr`, so Compose treats them as the
+> same project regardless of directory: a lifecycle command run in *this*
+> repository acts on those live containers. Verified 2026-08-25 — `docker
+> compose ps` here lists them. See `CLAUDE.md`.
 
 ## Ports
 
@@ -32,12 +46,21 @@ itself listens on. See *Key conventions* in `CLAUDE.md`.
 
 ## Start / stop
 
+Run these **from whichever checkout owns the deployment** — today the Investio
+copy above, not this one:
+
 ```bash
-cd <repo root>            # $PWD-based mounts require this
-docker compose config     # validate .env + wiring, starts nothing
-docker compose up -d      # start
+cd <the owning checkout>   # $PWD-based mounts require this
+docker compose config      # validate .env + wiring, starts nothing
+docker compose up -d       # start
+docker compose down        # stop — interrupts every dependent service
+```
+
+Safe from anywhere, read-only:
+
+```bash
 docker logs -f inv_gateway
-docker compose down       # stop — interrupts every dependent service
+docker compose config      # validation only, starts nothing
 ```
 
 ## Provisioning the bastion `data/` directory

@@ -119,8 +119,13 @@ quoting alone:
 `TOTP_QR_ENCODE`, `CA_ENABLED`, `SSHD_HOST_CERT`, `SSHD_USER_CA` and
 `BANNER_ENABLED` through to the bastion, mirroring `bastion/docker-compose.yml`.
 Verified 2026-08-25 with `docker compose config`: the values now appear in the
-service definition. **The running `inv_bastion` container does not pick this up
-until it is recreated** — it was deliberately not restarted.
+service definition.
+
+**The running `inv_bastion` is unaffected, and deliberately so.** It is started
+from the Investio copy of this project (see `CLAUDE.md`), whose
+`docker-compose.yml` still passes only `USERS` — checked 2026-08-25. The fix
+here reaches it when Investio adopts this repository, or if the same change is
+made there. The owner has asked that the container not be recreated.
 
 ### 7. `SSH_REMOTE_PORT` did the opposite of what the documentation said — **FIXED (documentation)**
 

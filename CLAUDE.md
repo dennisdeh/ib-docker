@@ -16,13 +16,25 @@ driven by [IBC](https://github.com/IbcAlpha/IBC) under Xvfb, with `socat` and/or
 an SSH tunnel exposing the IB API port outside the container. The published
 images are `ghcr.io/dennisdeh/ib-gateway` and `ghcr.io/dennisdeh/tws-rdesktop`.
 
-This checkout is **both** the source of those images **and the live deployment**:
-`docker-compose.yml` here runs `inv_gateway` + `inv_bastion` as part of a wider
-trading stack. Two different meanings of "done" therefore apply — see *Testing*.
+**This checkout is the source of the images, not the running deployment.**
+`inv_gateway` and `inv_bastion` are started from a vendored copy of this project
+inside the Investio repository, at
+`/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker`. Investio is
+expected to consume this repository later; until it does, a change merged here
+reaches the running stack only when someone updates that copy. *(Stated by the
+owner and confirmed from the containers' compose labels, 2026-08-25.)*
+
+> **Compose commands run here still hit those live containers.** Both compose
+> files declare `name: inv_ibkr`, and Compose identifies a project by that name,
+> not by directory — so `docker compose ps` in this repo lists the running
+> `inv_gateway`/`inv_bastion` (verified 2026-08-25), and `down`, `restart` or
+> `up -d` would act on them. **Never run a compose lifecycle command here.**
+> `docker compose config` is safe; it starts nothing.
 
 - **Primary language / runtime:** Bash + Dockerfile. No application code.
 - **Entry point (build):** `./update.sh <channel> <version>` regenerates a channel.
-- **Entry point (run):** `docker compose up -d` from the repo root, reading `.env`.
+- **Entry point (run):** `docker compose up -d` — but see the warning above; that
+  is how the *consumer* of this repository starts it, not something to run here.
 - **Central concept:** the **channel** — `stable` or `latest`, one IB Gateway
   version each. Every generated artefact is per-channel; `image-files/` is the
   single per-channel-agnostic source.
@@ -204,16 +216,19 @@ docker build -t ib-gateway:check ./stable             # the other channel
 
 Report the outcome. A build that was not run is not a build that passed.
 
-### 3. Runtime — requires the live stack, so **ask first**
+### 3. Runtime — the live containers are not ours to touch
 
-**`inv_gateway` and `inv_bastion` are running and other services depend on
-them** (`inv_visualisation`, and anything talking to `127.0.0.1:9898`).
+**`inv_gateway` and `inv_bastion` belong to the Investio checkout** (see
+*Project overview*), are running, and other services depend on them
+(`inv_visualisation`, and anything talking to `127.0.0.1:9898`).
 
-- **Never `docker compose up/down/restart` the real services without explicit
-  go-ahead in the current message.** Approval given for one change does not
-  carry to the next.
-- Prefer an isolated check: a separate compose project name and unused ports, so
-  the running gateway is untouched.
+- **Never run `docker compose up/down/restart` in this repository.** The shared
+  `name: inv_ibkr` means those commands reach the live containers even though
+  this is a different directory. This is not a "confirm first" case; the owner
+  has said the containers are managed elsewhere.
+- An isolated check is the only runtime option from here: `-p` with a throwaway
+  project name **and** different container names and ports, so nothing collides
+  with the running stack.
 - A real login consumes an IB session. `EXISTING_SESSION_DETECTED_ACTION` and
   IB's one-session-per-account rule mean a second login can **disconnect the
   running gateway mid-session**. Treat starting a second gateway against the
