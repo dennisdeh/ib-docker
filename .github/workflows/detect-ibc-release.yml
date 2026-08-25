@@ -65,7 +65,7 @@ jobs:
           latest=${{ steps.ibc_version.outputs.IBC_LATEST }}
           prefix=${{ env.BRANCH_PREFIX }}
           search=${prefix}-${latest}
-          
+
           # Check if branch exists
           if [ "$(git branch -r --list | grep origin/${search})" ]; then
             echo "BRANCH_EXISTS=true" >> $GITHUB_OUTPUT
