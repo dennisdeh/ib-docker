@@ -12,12 +12,17 @@ ssh/
 /*_password.txt
 /pass/*
 /init-scripts/*
-/.idea/.gitignore
-/.idea/ib-gateway-docker.iml
-/.idea/modules.xml
-/.idea/inspectionProfiles/profiles_settings.xml
-/.idea/inspectionProfiles/Project_Default.xml
-/.idea/vcs.xml
+# Editor and agent state. Listing the whole directory, not the files inside it:
+# the previous six /.idea/ entries named specific files, so anything the IDE
+# added later - misc.xml, for one - showed up as untracked noise forever.
+# .claude/ also holds worktrees/, which must never be committed.
+.idea/
+# .claude/*, not .claude/ - git cannot re-include a file whose parent directory
+# is excluded, so the negation below would silently do nothing.
+.claude/*
+# A shared settings.json is checked in on purpose where a project has one, the
+# same way .env-dist is; settings.local.json and worktrees/ stay ignored.
+!.claude/settings.json
 /keylock
 /key.pem
 /cert.pem

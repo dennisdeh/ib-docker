@@ -93,8 +93,13 @@ feature, not a bug.
 > by the `no-real-env-files` pre-commit hook, which fails even on a `git add -f`
 > *(both verified 2026-08-25)*. `.env-dist` stays tracked. Belt and braces are
 > there because the cost of one mistake is broker credentials in a public repo —
-> so still **stage files by name, never `git add -A` / `git add .`**. `.idea/`
-> is only partially ignored and has no such guard.
+> so still **stage files by name, never `git add -A` / `git add .`**. Neither
+> `.idea/` nor `.claude/` has such a guard, but both are now ignored wholesale
+> *(2026-08-26)*; `.idea/` used to name six specific files, so every new IDE file
+> reappeared as untracked noise. `.claude/*` is written with the glob, not the
+> bare directory, because git cannot re-include a file whose parent directory is
+> excluded — which is what lets `!.claude/settings.json` work while
+> `settings.local.json` and `worktrees/` stay ignored.
 
 ## Key conventions
 
