@@ -251,3 +251,160 @@ line_of() {
 	[ -n "$output" ]
 	[[ $output != *"if:"* ]]
 }
+
+# Everything above reads the workflows as text. What follows runs the shell they
+# contain. The version gate it covers is the one publishing mistake nothing
+# downstream can detect - a correct image under a wrong tag - and a text match
+# can show only that the code is present, never that it fires.
+
+# The `run: |` body of a named step, dedented, so it can be executed here.
+step_script() {
+	awk -v step="$2" '
+		$0 ~ "^      - name: " step "$" { in_step = 1; next }
+		in_step && /^      - /         { exit }
+		in_step && /^        run: \|/  { in_run = 1; next }
+		in_run && /^          /        { sub(/^          /, ""); print; next }
+		in_run && /^[[:space:]]*$/     { print ""; next }
+		in_run                         { exit }
+	' "$1"
+}
+
+declared_version() {
+	grep 'ENV IB_GATEWAY_VERSION=' "${ROOT}/$1/Dockerfile" | head -1 | cut -d '=' -f 2
+}
+
+github_ref_for() {
+	if [ "$1" = 'push' ]; then echo "refs/tags/$2"; else echo "refs/heads/$2"; fi
+}
+
+# publish.yml's first resolution step on its own, echoing "<exit status>
+# <channel>". It is run apart from the version step because the version gate
+# refuses an unknown channel too - by way of a `<channel>/Dockerfile` that
+# cannot exist - and that redundancy hides the channel guard being deleted:
+# removing it changes no outcome any whole-job assertion can see.
+#
+# publish.yml declares no `defaults.run.shell`, so its steps get GitHub's
+# default of `bash -e {0}`.
+#
+#   resolve_channel <inputs.channel> <inputs.ref> <ref_name> <event>
+resolve_channel() {
+	local in_channel="$1" in_ref="$2" ref_name="$3" event="$4"
+	local out status
+
+	local script gref
+	out="${BATS_TEST_TMPDIR}/gh_output"
+	: >"$out"
+	script="$(step_script "${WORKFLOWS}/publish.yml" 'Resolve channel and ref')"
+	gref="$(github_ref_for "$event" "$ref_name")"
+
+	status=0
+	(
+		cd "$ROOT" || exit 1
+		IN_CHANNEL="$in_channel" IN_REF="$in_ref" REF_NAME="$ref_name" \
+			GITHUB_REF="$gref" GITHUB_EVENT_NAME="$event" GITHUB_OUTPUT="$out" \
+			bash -e -c "$script"
+	) >/dev/null 2>&1 || status=$?
+
+	echo "$status $(sed -n 's/^channel=//p' "$out")"
+}
+
+# Both resolution steps, as the runner runs them, echoing "<exit status>
+# <channel> <version>".
+#
+#   resolve <inputs.channel> <inputs.version> <inputs.ref> <ref_name> <event>
+resolve() {
+	local in_channel="$1" in_version="$2" in_ref="$3" ref_name="$4" event="$5"
+	local out first status channel version
+
+	first="$(resolve_channel "$in_channel" "$in_ref" "$ref_name" "$event")"
+	status="${first%% *}"
+	channel="${first#* }"
+	out="${BATS_TEST_TMPDIR}/gh_output"
+
+	local script gref
+	script="$(step_script "${WORKFLOWS}/publish.yml" 'Resolve version')"
+	gref="$(github_ref_for "$event" "$ref_name")"
+
+	version=''
+	if [ "$status" -eq 0 ]; then
+		(
+			cd "$ROOT" || exit 1
+			IN_VERSION="$in_version" REF_NAME="$ref_name" CHANNEL="$channel" \
+				GITHUB_REF="$gref" GITHUB_EVENT_NAME="$event" GITHUB_OUTPUT="$out" \
+				bash -e -c "$script"
+		) >/dev/null 2>&1 || status=$?
+		version="$(sed -n 's/^version=//p' "$out")"
+	fi
+
+	echo "$status $channel $version"
+}
+
+@test "publish: an unknown channel is refused before anything is built" {
+	run resolve_channel latest deadbeef master workflow_call
+	[ "$output" = "0 latest" ]
+	run resolve_channel stable deadbeef master workflow_call
+	[ "$output" = "0 stable" ]
+
+	# The channel names the build context directory. Accepting anything else
+	# would build an empty context, or the wrong channel, and say nothing.
+	run resolve_channel nightly deadbeef master workflow_call
+	[ "${output%% *}" = "1" ]
+	run resolve_channel '' '' "v1.2.3-master" push
+	[ "${output%% *}" = "1" ]
+	run resolve_channel '' '' "v1.2.3" push
+	[ "${output%% *}" = "1" ]
+}
+
+@test "publish: a call publishes the channel and version it was given" {
+	local want
+	want="$(declared_version latest)"
+	run resolve latest "$want" deadbeef master workflow_call
+	[ "$output" = "0 latest $want" ]
+
+	want="$(declared_version stable)"
+	run resolve stable "$want" deadbeef master workflow_call
+	[ "$output" = "0 stable $want" ]
+}
+
+@test "publish: an image is never tagged with a version it does not contain" {
+	# Publishing `stable`'s version out of the `latest` tree, or a version no
+	# tree builds at all, must fail the job rather than push a mislabelled
+	# image. Nothing downstream of here can tell the difference.
+	run resolve latest "$(declared_version stable)" deadbeef master workflow_call
+	[ "${output%% *}" = "1" ]
+
+	run resolve latest 99.99.9z deadbeef master workflow_call
+	[ "${output%% *}" = "1" ]
+}
+
+@test "publish: a v<version>-<channel> tag resolves both" {
+	local want
+	want="$(declared_version latest)"
+	run resolve '' '' '' "v${want}-latest" push
+	[ "$output" = "0 latest $want" ]
+
+	want="$(declared_version stable)"
+	run resolve '' '' '' "v${want}-stable" push
+	[ "$output" = "0 stable $want" ]
+}
+
+@test "publish: a tag that does not name a channel publishes nothing" {
+	local want
+	want="$(declared_version latest)"
+	# No channel field at all; a branch name where the channel belongs; and a
+	# suffixed tag, which parses as a channel but whose version half no longer
+	# matches the tree - `cut -f 2` is happy with all three.
+	run resolve '' '' '' "v${want}" push
+	[ "${output%% *}" = "1" ]
+	run resolve '' '' '' "v${want}-master" push
+	[ "${output%% *}" = "1" ]
+	run resolve '' '' '' "v${want}-latest-rc1" push
+	[ "${output%% *}" = "1" ]
+}
+
+@test "publish: a dispatch with no version reads it from the channel Dockerfile" {
+	local want
+	want="$(declared_version stable)"
+	run resolve stable '' '' master workflow_dispatch
+	[ "$output" = "0 stable $want" ]
+}
