@@ -260,6 +260,14 @@ The failure predates the reporting. `continue-on-error: true` (item #1) meant
 the job reported success regardless, so the last genuinely-green `arm64` build,
 if there ever was one, is not identifiable from the run history.
 
+**QEMU words the same fault two ways**, depending on how it declines the binary:
+`jre/bin/java: not found` and `Invalid ELF image for this architecture`. Both
+mean a wrong-architecture executable, both exit 255, and both are this bug — the
+second was seen on 2026-08-26 on branch `worktree-auto-publish-images`, which
+still carries the pre-fix Dockerfile. That log also shows the mechanism plainly:
+`zulu…tar.gz: OK` immediately before the installer reaches for its *own* bundled
+`jre/bin/java` anyway, which is the proof that `app_java_home` is ignored.
+
 **The fix** is to install the architecture's own installer —
 `…-standalone-linux-arm.sh` on `aarch64`, `…-x64.sh` elsewhere. IB publishes
 both and `detect-releases.yml` already attaches both to each release
@@ -346,7 +354,7 @@ exit code and how far it got:
 
 | symptom | cause |
 |---|---|
-| exit 255, `jre/bin/java: not found` | the x64-installer-on-aarch64 bug — fixed, see #17 |
+| exit 255, `jre/bin/java: not found` **or** `Invalid ELF image for this architecture` | the x64-installer-on-aarch64 bug — fixed, see #17 |
 | exit 1 at the `java -version` step | no JVM survived into the runtime stage, see #18 and `DECISIONS.md` #18 |
 | exit 100, `404 Not Found` from `ports.ubuntu.com` | this item; retry, and if it persists check whether Ubuntu is mid-publication |
 
