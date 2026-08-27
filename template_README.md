@@ -1,8 +1,8 @@
 # Interactive Brokers Gateway Docker
 
-[![Build](https://github.com/dennisdeh/ib-gateway-docker/actions/workflows/on-push-n-pr.yml/badge.svg?branch=master)](https://github.com/dennisdeh/ib-gateway-docker/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![GitHub Discussions](https://img.shields.io/github/discussions/dennisdeh/ib-gateway-docker)](https://github.com/dennisdeh/ib-gateway-docker/discussions) [![GitHub Repo stars](https://img.shields.io/github/stars/dennisdeh/ib-gateway-docker)](#repo-stats) [![GitHub forks](https://img.shields.io/github/forks/dennisdeh/ib-gateway-docker)](https://github.com/dennisdeh/ib-gateway-docker/network/members)
+[![Build](https://github.com/dennisdeh/ib-docker/actions/workflows/on-push-n-pr.yml/badge.svg?branch=master)](https://github.com/dennisdeh/ib-docker/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![GitHub Discussions](https://img.shields.io/github/discussions/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/discussions) [![GitHub Repo stars](https://img.shields.io/github/stars/dennisdeh/ib-docker)](#repo-stats) [![GitHub forks](https://img.shields.io/github/forks/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/network/members)
 
-<img src="https://github.com/dennisdeh/ib-gateway-docker/blob/master/logo.png" height="300" class="center" alt="IB Gateway Docker"/>
+<img src="https://github.com/dennisdeh/ib-docker/blob/master/logo.png" height="300" class="center" alt="IB Gateway Docker"/>
 
 ## Credits
 
@@ -62,7 +62,7 @@ All tags are available in the container repository for [ib-gateway][1] and
 ## How to use it?
 
 Create a `docker-compose.yml` file (or include ib-gateway services on your existing
-one). The [sample file provided](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml)
+one). The [sample file provided](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml)
 can be used as starting point. It carries both images in one file — an
 `ib-gateway` service and a `tws` service — and `.env` picks which one runs, see
 [Choosing the application](#choosing-the-application).
@@ -127,7 +127,7 @@ services:
 
 ```
 
-Create an .env on root directory. You can use the provided [.env-dist](https://github.com/dennisdeh/ib-gateway-docker/blob/master/.env-dist) as a starting point. Example .env file:
+Create an .env on root directory. You can use the provided [.env-dist](https://github.com/dennisdeh/ib-docker/blob/master/.env-dist) as a starting point. Example .env file:
 
 ```bash
 # which image to run: ib-gateway, tws, or both
@@ -209,8 +209,8 @@ Naming a service on the command line enables its profile for that command, so
 `docker compose build` only builds the selected service.
 
 Looking for help? Please keep reading below, or go to
-[discussion](https://github.com/dennisdeh/ib-gateway-docker/discussions) section for common
-problems and solutions. If you have problems please go through the [troubleshooting guide](https://github.com/dennisdeh/ib-gateway-docker/discussions/245)
+[discussion](https://github.com/dennisdeh/ib-docker/discussions) section for common
+problems and solutions. If you have problems please go through the [troubleshooting guide](https://github.com/dennisdeh/ib-docker/discussions/245)
 
 ## Configuration
 
@@ -237,7 +237,7 @@ All environment variables are common between ibgateway and TWS image, unless spe
 | `TWS_COLD_RESTART` | IBC >= 3.19 set this value to <hh:mm> | **not defined** |
 | `SAVE_TWS_SETTINGS`  | automatically save its settings on a schedule of your choosing. You can specify one or more specific times, ex `SaveTwsSettingsAt=08:00   12:30 17:30`  | **not defined**  |
 | `RELOGIN_AFTER_TWOFA_TIMEOUT` | support relogin after timeout. See IBC [documentation](https://github.com/IbcAlpha/IBC/blob/master/userguide.md#second-factor-authentication) | no  |
-| `EXISTING_SESSION_DETECTED_ACTION` | Set Existing Session Detected Action. See IBC [documentation](https://github.com/dennisdeh/ib-gateway-docker/blob/master/latest/config/ibc/config.ini.tmpl#L296-L329) | primary |
+| `EXISTING_SESSION_DETECTED_ACTION` | Set Existing Session Detected Action. See IBC [documentation](https://github.com/dennisdeh/ib-docker/blob/master/latest/config/ibc/config.ini.tmpl#L296-L329) | primary |
 | `ALLOW_BLIND_TRADING` | TWS displays a dialog to warn you against blind trading.See IBC [documentation](https://github.com/IbcAlpha/IBC/blob/c98d0bcc2ead9b8ab3900a23a707f01f8fd7dfbc/resources/config.ini#L702)| no |
 | `TIME_ZONE`  | Support for timezone, see your TWS jts.ini file for [valid values](https://ibkrguides.com/tws/usersguidebook/configuretws/configgeneral.htm) on a [tz database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). This sets time zone for IB Gateway. If jts.ini exists it will not be set. if `TWS_SETTINGS_PATH` is set and stored in a volume, jts.ini will already exists so this will not be used. Examples `Europe/Paris`, `America/New_York`, `Asia/Tokyo` | "Etc/UTC"  |
 | `TWS_SETTINGS_PATH` | Settings path used by IBC's parameter `--tws_settings_path`. Use with a volume to preserve settings in the volume. If `TRADING_MODE=both` this will be the prefix four your settings. ex `/config/tws_settings_live` and `/config/tws_settings_paper`. |  |
@@ -288,13 +288,13 @@ Note that with the above `docker-compose.yml`, ports are only exposed to the doc
 
 ## Using TWS
 
-From `10.26.1h` it's possible to run TWS in a container. [tws-rdesktop](https://github.com/dennisdeh/ib-gateway-docker/pkgs/container/tws-rdesktop) image provides a desktop environment that allows to use TWS.
+From `10.26.1h` it's possible to run TWS in a container. [tws-rdesktop](https://github.com/dennisdeh/ib-docker/pkgs/container/tws-rdesktop) image provides a desktop environment that allows to use TWS.
 
 ### Performance considerations for TWS
 
-[tws-rdesktop](https://github.com/dennisdeh/ib-gateway-docker/pkgs/container/tws-rdesktop) has the following recomended settings.
+[tws-rdesktop](https://github.com/dennisdeh/ib-docker/pkgs/container/tws-rdesktop) has the following recomended settings.
 
-On the `tws` service in [docker-compose.yml](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml):
+On the `tws` service in [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml):
 
 - set `/dev/dri:/dev/dri`
 - shm_size: "1gb"
@@ -315,15 +315,15 @@ Image IB Gateway and IBC config file locations:
 
 | App  | Config file  | Default  |
 | --- | --- | --- |
-| IB Gateway | /home/ibgateway/Jts/jts.ini    | [jts.ini](https://github.com/dennisdeh/ib-gateway-docker/blob/master/image-files/config/ibgateway/jts.ini.tmpl) |
-| IBC  | /home/ibgateway/ibc/config.ini | [config.ini](https://github.com/dennisdeh/ib-gateway-docker/blob/master/image-files/config/ibc/config.ini.tmpl) |
+| IB Gateway | /home/ibgateway/Jts/jts.ini    | [jts.ini](https://github.com/dennisdeh/ib-docker/blob/master/image-files/config/ibgateway/jts.ini.tmpl) |
+| IBC  | /home/ibgateway/ibc/config.ini | [config.ini](https://github.com/dennisdeh/ib-docker/blob/master/image-files/config/ibc/config.ini.tmpl) |
 
 For TWS image config file locations are:
 
 | App | Config file  | Default  |
 | --- | --- | --- |
-| TWS | /opt/ibkr/jts.ini   | [jts.ini](https://github.com/dennisdeh/ib-gateway-docker/blob/master/image-files/config/ibgateway/jts.ini.tmpl) |
-| IBC | /opt/ibc/config.ini | [config.ini](https://github.com/dennisdeh/ib-gateway-docker/blob/master/image-files/config/ibc/config.ini.tmpl) |
+| TWS | /opt/ibkr/jts.ini   | [jts.ini](https://github.com/dennisdeh/ib-docker/blob/master/image-files/config/ibgateway/jts.ini.tmpl) |
+| IBC | /opt/ibc/config.ini | [config.ini](https://github.com/dennisdeh/ib-docker/blob/master/image-files/config/ibc/config.ini.tmpl) |
 
 Sample settings:
 
@@ -424,7 +424,7 @@ additional layer of security (e.g. TLS/SSL or SSH tunnel) to protect the
 
 Some examples of possible configurations
 
-- Available to `localhost`, this is the default setup provided in [docker-compose.yml](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml).
+- Available to `localhost`, this is the default setup provided in [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml).
 Suitable for testing. It does not expose API port to host network, host must be trusted.
 - Available to the host network. Unsecure configuration, suitable for short
   tests in a secure network. **Not recommended**.
@@ -466,14 +466,14 @@ using ssh client. So basically it will connect to an ssh server and expose IB
 Gateway port there.
 
 An example setup would be to run
-[ib-gateway-docker](https://github.com/dennisdeh/ib-gateway-docker) with a
+[ib-docker](https://github.com/dennisdeh/ib-docker) with a
 sidecar [ssh bastion](https://github.com/dennisdeh/docker-bastion) and a
 [jupyter-quant](https://github.com/dennisdeh/jupyter-quant), which provides a
 fully working algorithmic trading environment. In simple terms ib gateway opens
 a **remote** port on ssh bastion and listen to connections on it. While
 [jupyter-quant](https://github.com/dennisdeh/jupyter-quant) will open a **local**
 port that is tunneled into bastion on the same port opened by
-ib-gateway-docker. This combination of tunnels will expose IB API port into
+ib-docker. This combination of tunnels will expose IB API port into
 [jupyter-quant](https://github.com/dennisdeh/jupyter-quant) making it available
 for use with [ib_insync](https://github.com/erdewit/ib_insync). The only port
 available to the outside world is the
@@ -511,7 +511,7 @@ It would look like this
       ---------------
 ```
 
-`ib-gateway-docker` is using `ServerAliveInterval` and `ServerAliveCountMax`
+`ib-docker` is using `ServerAliveInterval` and `ServerAliveCountMax`
 ssh settings to keep the tunnel open. Additionally it will restart the tunnel
 automatically if it's stopped, and will keep trying to restart it.
 
@@ -525,7 +525,7 @@ automatically if it's stopped, and will keep trying to restart it.
   start `ssh-agent` and add ssh keys to agent. `ssh` will use `ssh-agent`.
 
 In addition to the environment variables listed above you need to pass ssh keys
-to `ib-gateway-docker` container. This is achieved through a volume mount
+to `ib-docker` container. This is achieved through a volume mount
 
 ```yaml
 ...
@@ -587,13 +587,13 @@ secrets:
 
 ```
 
-In "discussion" section you will find full examples for [ib-gateway](https://github.com/dennisdeh/ib-gateway-docker/discussions/103) and [tws-rdesktop](https://github.com/dennisdeh/ib-gateway-docker/discussions/105)
+In "discussion" section you will find full examples for [ib-gateway](https://github.com/dennisdeh/ib-docker/discussions/103) and [tws-rdesktop](https://github.com/dennisdeh/ib-docker/discussions/105)
 
 ### RDP
 
 [tws-rdesktop][2] will create a new TLS certificate every time the container
 starts. You can create your own certificate following this
-[instructions](https://github.com/dennisdeh/ib-gateway-docker/discussions/104).
+[instructions](https://github.com/dennisdeh/ib-docker/discussions/104).
 Once this steps are put in place the same TLS certificate will be used every
 time, which will allow you to trust it in your RDP client.
 
@@ -635,7 +635,7 @@ This will pull the right image for aarch64 architecture.
 
 The aarch64 image installs Interactive Brokers' own `arm` installer, so a
 channel can only publish `linux/arm64` for a version whose
-[release](https://github.com/dennisdeh/ib-gateway-docker/releases) carries the
+[release](https://github.com/dennisdeh/ib-docker/releases) carries the
 `ibgateway-<version>-standalone-linux-arm.sh` asset. Releases from
 `stable@10.45.1h` and `latest@10.47.1e` onward all carry it, and both published
 channels are on such a version, so both are published for `linux/amd64` and
@@ -644,9 +644,9 @@ channels are on such a version, so both are published for `linux/amd64` and
 ## IB Gateway installation files
 
 Note that the
-[Dockerfile](https://github.com/dennisdeh/ib-gateway-docker/blob/master/Dockerfile)
+[Dockerfile](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile)
 **does not download IB Gateway installer files from IB homepage but from the
-[github-releases](https://github.com/dennisdeh/ib-gateway-docker/releases) of this
+[github-releases](https://github.com/dennisdeh/ib-docker/releases) of this
 project**.
 
 This is because it shall be possible to (re-)build the image, targeting a
@@ -655,14 +655,14 @@ but IB only provide download links for the `latest` or `stable` version (there
 is no 'old version' download archive).
 
 The installer files stored on
-[releases](https://github.com/dennisdeh/ib-gateway-docker/releases) have been
+[releases](https://github.com/dennisdeh/ib-docker/releases) have been
 downloaded from IB homepage and renamed to reflect the version.
 
 IF you feel adventurous and you want to download Gateway installer from IB
 homepage directly, or use your local installation file, change this line
-on [Dockerfile](https://github.com/dennisdeh/ib-gateway-docker/blob/master/Dockerfile)
+on [Dockerfile](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile)
 `RUN curl -sSL
-https://github.com/dennisdeh/ib-gateway-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
+https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
 --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh` to download
 (or copy) the file from the source you prefer.
 
@@ -673,7 +673,7 @@ https://github.com/dennisdeh/ib-gateway-docker/raw/gh-pages/ibgateway-releases/i
 1. Clone this repo
 
     ```bash
-      git clone https://github.com/dennisdeh/ib-gateway-docker
+      git clone https://github.com/dennisdeh/ib-docker
     ```
 
 1. Change docker file to use your local IB Gateway installer file, instead of
@@ -681,9 +681,9 @@ https://github.com/dennisdeh/ib-gateway-docker/raw/gh-pages/ibgateway-releases/i
    replace this lines:
 
    ```docker
-   RUN curl -sSL https://github.com/dennisdeh/ib-gateway-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh \
+   RUN curl -sSL https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh \
        --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
-   RUN curl -sSL https://github.com/dennisdeh/ib-gateway-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256 \
+   RUN curl -sSL https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256 \
        --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256
    ```
 
@@ -705,10 +705,10 @@ https://github.com/dennisdeh/ib-gateway-docker/raw/gh-pages/ibgateway-releases/i
 1. Build and run: `docker-compose up --build`
 
 [1]: https://github.com/users/dennisdeh/packages/container/package/ib-gateway "ib-gateway"
-[2]: https://github.com/dennisdeh/ib-gateway-docker/pkgs/container/tws-rdesktop "tws-rdesktop"
+[2]: https://github.com/dennisdeh/ib-docker/pkgs/container/tws-rdesktop "tws-rdesktop"
 
 ## Repo stats
 
 Repository stars overtime.
 
-[![Stargazers over time](https://starchart.cc/dennisdeh/ib-gateway-docker.svg?variant=adaptive)](https://starchart.cc/dennisdeh/ib-gateway-docker)
+[![Stargazers over time](https://starchart.cc/dennisdeh/ib-docker.svg?variant=adaptive)](https://starchart.cc/dennisdeh/ib-docker)

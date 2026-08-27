@@ -55,7 +55,7 @@ CMD ["/usr/sbin/sshd", "-D", "-e"]
 # ghcr.io links a package to a repository through this label, so it names the
 # repository the image is built and published from - not the project it was
 # forked from, which bastion/README.md credits.
-LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-gateway-docker
+LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-docker
 LABEL org.opencontainers.image.description="OpenSSH Bastion container"
 LABEL org.opencontainers.image.licenses=MIT
 LABEL org.opencontainers.image.version=${IMAGE_VERSION}-${BASE_VERSION}

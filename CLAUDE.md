@@ -13,7 +13,18 @@ plausible-looking action is the wrong one.*
 Builds Docker images running Interactive Brokers Gateway (and TWS) headless,
 driven by [IBC](https://github.com/IbcAlpha/IBC) under Xvfb, with `socat` and/or
 an SSH tunnel exposing the IB API port outside the container. The published
-images are `ghcr.io/dennisdeh/ib-gateway` and `ghcr.io/dennisdeh/tws-rdesktop`.
+images are `ghcr.io/dennisdeh/ib-gateway`, `ghcr.io/dennisdeh/tws-rdesktop` and
+`ghcr.io/dennisdeh/bastion`.
+
+**The repository is `ib-docker`.** It was `ib-gateway-docker` until 2026-08-27;
+one `docker-compose.yml` now runs the gateway, TWS and the bastion behind
+profiles, so a name that mentioned only the gateway had stopped being true.
+**The rename was of the repository, not of the packages** — the three image
+names above are unchanged, and `Dockerfile.tws` still opens `FROM
+ghcr.io/dennisdeh/ib-gateway`. Two strings deliberately keep the old spelling
+and must survive any future sweep: `gnzsnz/ib-gateway-docker`, the project this
+was forked from, and the Investio vendored path below, which is a directory in
+somebody else's tree. `tests/unit/naming.bats` fails on any other occurrence.
 
 **This project is independent, not a tracking fork.** It began as a fork of
 `gnzsnz/ib-gateway-docker`, which `LICENSE` and the README credit, and that is
@@ -26,10 +37,12 @@ installer servers, `IbcAlpha/IBC`, `lscr.io/linuxserver/rdesktop` and Azul.
 **This checkout is the source of the images, not the running deployment.**
 `inv_gateway` and `inv_bastion` are started from a vendored copy of this project
 inside the Investio repository, at
-`/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker`. Investio is
-expected to consume this repository later; until it does, a change merged here
-reaches the running stack only when someone updates that copy. *(Stated by the
-owner and confirmed from the containers' compose labels, 2026-08-25.)*
+`/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker` — still the
+old name, because renaming this repository does not rename a directory in
+Investio's tree. Investio is expected to consume this repository later; until it
+does, a change merged here reaches the running stack only when someone updates
+that copy. *(Stated by the owner and confirmed from the containers' compose
+labels, 2026-08-25; path re-confirmed unchanged 2026-08-27.)*
 
 > **Compose commands run here still hit those live containers.** This
 > repository's `docker-compose.yml` and the Investio copy both declare
@@ -52,7 +65,7 @@ owner and confirmed from the containers' compose labels, 2026-08-25.)*
 No language runtime, no virtualenv. What you need is Docker and the repo root:
 
 ```bash
-cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-gateway-docker"
+cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-docker"
 docker compose config   # validates .env + compose wiring without starting anything
 ```
 
@@ -65,7 +78,7 @@ docker compose config   # validates .env + compose wiring without starting anyth
   `python3 -m venv .venv && .venv/bin/pip install pre-commit`. **There is no
   `gh` — never plan a step around it.** PRs are opened in the browser, or the
   bot opens them from CI.
-- The remote is `origin` → `git@github.com:dennisdeh/ib-gateway-docker.git`,
+- The remote is `origin` → `git@github.com:dennisdeh/ib-docker.git`,
   and it is the only one. It was HTTPS until 2026-08-25; over HTTPS every push
   prompted for a username and failed in a non-interactive session. The machine's
   SSH key already authenticates to GitHub as `dennisdeh`, so pushes need no
@@ -316,7 +329,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 80 tests as of 2026-08-27.
+  container, no network, no credentials. 85 tests as of 2026-08-27.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,

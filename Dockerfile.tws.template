@@ -73,8 +73,8 @@ RUN java_bin="$(find /usr/local/i4j_jres ${TWS_PATH} -name java -type f -print -
   [ -n "${java_bin}" ] && "${java_bin}" -version
 
 # labels
-LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-gateway-docker
-LABEL org.opencontainers.image.url=https://github.com/dennisdeh/ib-gateway-docker/pkgs/container/tws-rdesktop
+LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-docker
+LABEL org.opencontainers.image.url=https://github.com/dennisdeh/ib-docker/pkgs/container/tws-rdesktop
 LABEL org.opencontainers.image.description="Docker image with XFCE, TWS & IBC"
 LABEL org.opencontainers.image.licenses="Apache License Version 2.0"
 LABEL org.opencontainers.image.version=${IB_GATEWAY_VERSION}-${IB_GATEWAY_RELEASE_CHANNEL}
