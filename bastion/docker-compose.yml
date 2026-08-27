@@ -8,9 +8,13 @@ services:
       args:
         APT_PROXY: ${APT_PROXY}
         BASE_VERSION: ${BASE_VERSION}
+        IMAGE_VERSION: ${IMAGE_VERSION}
     restart: unless-stopped
-    image: dennisdeh/bastion:local-resolute
-    container_name: ${CONTAINER_PREFIX}bastion
+    # Same name the root compose file and publish.yml use. `pull_policy: build`
+    # keeps this from reaching for the private ghcr.io tag when building here.
+    pull_policy: build
+    image: ghcr.io/dennisdeh/bastion:latest
+    container_name: ${CONTAINER_NAME_BASTION:-bastion}
     ports:
       - ${SSH_LISTEN_PORT}:22
     # optional

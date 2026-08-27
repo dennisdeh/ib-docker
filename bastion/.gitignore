@@ -1,6 +1,8 @@
+# /data/ below is the only rule protecting the provisioned bastion data -
+# host keys, shadow, authorized_keys. The root .gitignore anchors its own
+# /data/ to the repository root, so it does not cover this directory.
 .env
 /data/
-docker-compose.yml
 .vscode
 /test/tmp/*
 .python-version
@@ -27,8 +29,3 @@ docker-compose.yml
 .LSOverride
 # Thumbnails
 ._*
-/.idea/docker-bastion.iml
-/.idea/modules.xml
-/.idea/inspectionProfiles/profiles_settings.xml
-/.idea/inspectionProfiles/Project_Default.xml
-/.idea/vcs.xml
