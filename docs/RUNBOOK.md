@@ -3,7 +3,7 @@
 How to run, provision and recover the local stack. User-facing configuration is
 documented in `template_README.md`; this file is about *this* deployment.
 
-*Last updated: 2026-08-25*
+*Last updated: 2026-08-27*
 
 ## What runs, and from where
 
@@ -21,6 +21,11 @@ vendored copy of this project inside the Investio repository:
 |---|---|---|
 | `inv_gateway` | `ghcr.io/dennisdeh/ib-gateway:latest` | IB Gateway + IBC under Xvfb |
 | `inv_bastion` | `dennisdeh/bastion:local-resolute` | SSH jump host for the tunnel |
+
+The bastion image name above is what the vendored copy *builds*; since
+2026-08-27 this repository also publishes `ghcr.io/dennisdeh/bastion`, and
+`docker-compose.yml` here names that instead. The running container keeps the
+locally built tag until the Investio copy is synced.
 
 Other services on this machine (`inv_visualisation`, `inv_db`, `inv_redis`,
 `inv_ntfy`) consume the gateway's API port.
@@ -74,10 +79,16 @@ docker compose config      # validation only, starts nothing
 
 *Last updated: 2026-08-27.*
 
-`deploy/provision.sh` prepares a host to run the **published** image alongside
+`deploy/provision.sh` prepares a host to run the **published** images alongside
 other containers, and emits the compose file to run it with. It creates the ssh
 keys, the bastion's `data/`, the secrets and the directory layout, and it is
 safe to re-run — every step checks before it acts.
+
+The user-facing version of this is the *Deploying* section of `README.md`
+(edit `template_README.md`); what follows is what applies to **this** machine.
+The script needs no checkout when given `--version`: it pulls all three images
+and writes the bastion's `data/` from inside the bastion container. Verified on
+2026-08-27 by running a copy of the script alone, outside the repository.
 
 ```bash
 deploy/provision.sh init --clients jupyter,visualisation --tws-userid <account>
@@ -140,10 +151,14 @@ equivalent, and what the existing deployment was built with.
 `data/` is gitignored and must exist before the bastion starts. It is created by
 `bastion/provision.sh`, run *inside* the bastion image with `data/` bind-mounted
 at `/data` (see the header comment in that script for the exact `docker run`).
-The container hashes the provisioned `/etc/passwd` and `sshd_config` into
-`data/etc/ssh/bastion_provisioned_hash.sum` and re-validates on every start:
-editing those files by hand makes the container refuse to start until it is
-re-provisioned. That is intentional.
+The container hashes the provisioned `/etc/passwd`, `sshd_config`, the host keys
+and — since 2026-08-27 — everything in `sshd_config.d/` plus a listing of that
+directory, into `data/etc/ssh/bastion_provisioned_hash.sum`, and re-validates on
+every start: editing any of it by hand makes the container refuse to start until
+it is re-provisioned. That is intentional. The listing is hashed as well as the
+files because a per-file hash cannot notice a drop-in being *added* or
+*removed* — every recorded line still checks out — and `sshd_config` includes
+whatever is in there.
 
 ## Recovery
 

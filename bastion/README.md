@@ -8,12 +8,19 @@ Features:
 
 - Implement sensible hardened SSH configuration
 - Mount critical data as READ-ONLY.
-- It creates hash signatures of passwd and sshd_config. Every time the container is started it will validate signatures.
+- It creates hash signatures of passwd, sshd_config, the host keys and everything in `sshd_config.d/` — plus a listing of that directory, so a drop-in that is added or removed is caught too, which a per-file hash cannot see. Every time the container is started it validates them and refuses to start on a mismatch.
 - Disabled TTY, it can only be used as a jump host a.k.a bastion.
 - Optional TOTP/MFA
 - Support for SSH certificate authority (CA)
 - Support for scp, sftp, rsync, port forwarding through bastion and from/to bastion.
 - Fully customizable.
+
+The image is published as `ghcr.io/dennisdeh/bastion` for `linux/amd64` and
+`linux/arm64`, tagged `latest` and with the `ARG IMAGE_VERSION` this
+`Dockerfile` declares. In this repository it is one of the three services in
+the root `docker-compose.yml`, and `deploy/provision.sh` provisions and starts
+it for you — see the *Deploying* section of the top-level `README.md`. The
+steps below are the manual equivalent.
 
 ## Quick start
 

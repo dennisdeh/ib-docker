@@ -110,12 +110,21 @@ A scheduled workflow asks Interactive Brokers every morning what the current
 build is for each channel. When it has moved, that run attaches the installers
 to a release here, regenerates the channel with `update.sh`, rewrites
 `README.md` from `template_README.md`, opens the version-bump pull request, and
-publishes both images to `ghcr.io/dennisdeh` — tagged with the version, the
-`major.minor` series and the channel name. The bump PR is still reviewed and
-merged by a human; the images do not wait for it.
+publishes the images to `ghcr.io/dennisdeh` — `ib-gateway` and `tws-rdesktop`
+tagged with the version, the `major.minor` series and the channel name, and the
+`bastion` tagged with the `ARG IMAGE_VERSION` its own Dockerfile declares. The
+bump PR is still reviewed and merged by a human; the images do not wait for it.
+
+The bastion has no IB version of its own, so bumping it means editing that one
+`ARG` — it is what both `publish.yml` and `deploy/provision.sh` read.
 
 The same applies to `image-files/`: your change reaches the published images at
 the next IB Gateway release, when `update.sh` regenerates the channels. To
 publish it sooner, run `publish.yml` from the Actions tab and pick a channel.
+
+If you are changing how a host is set up rather than what is in the image, the
+deployment path is `deploy/provision.sh` and the *Deploying* section of
+`template_README.md`. Both are covered by tests: `tests/unit/provision.bats`
+offline, and `tests/container/bastion_hash.bats` against a real bastion.
 
 Thank you for your contribution!

@@ -47,7 +47,8 @@ It includes:
 
 ## Supported Tags
 
-Images are provided for [IB gateway][1] and [TWS][2]. With the following tags:
+Three images are published — [IB gateway][1], [TWS][2] and the ssh bastion the
+tunnel dials — for `linux/amd64` and `linux/arm64`, with the following tags:
 
 | Image| Channel  | IB Gateway Version  | IBC Version      | Docker Tags                                    |
 | --- | -------- | ------------------- | ---------------- | ---------------------------------------------- |
@@ -55,15 +56,107 @@ Images are provided for [IB gateway][1] and [TWS][2]. With the following tags:
 | [ib-gateway][1] |`stable` | `${STABLE_VERSION}` | `${IBC_VERSION}` | `stable` `${STABLE_MINOR}` `${STABLE_VERSION}` |
 | [tws-rdesktop][2] | `latest` | `${LATEST_VERSION}` | `${IBC_VERSION}` | `latest` `${LATEST_MINOR}` `${LATEST_VERSION}` |
 | [tws-rdesktop][2] |`stable` | `${STABLE_VERSION}` | `${IBC_VERSION}` | `stable` `${STABLE_MINOR}` `${STABLE_VERSION}` |
+| [bastion][3] | — | — | — | `latest` and its own image version |
 
 All tags are available in the container repository for [ib-gateway][1] and
 [tws-rdesktop][2]. IB Gateway and TWS share the same version numbers and tags.
 
+The bastion carries no IB version — it is the ssh jump host, and it changes on
+its own schedule, so it is tagged with a version of its own. Publishing it
+alongside the other two is what lets a host be set up without a checkout to
+build anything from.
+
+## Deploying
+
+Because all three images are published, a host needs no checkout to run this.
+`deploy/provision.sh` sets one up end to end — the ssh keys, the bastion's
+users, the secrets and the directory layout — and writes a compose file that
+**pulls** rather than builds.
+
+```bash
+curl -fLO https://raw.githubusercontent.com/dennisdeh/ib-docker/master/deploy/provision.sh
+chmod +x provision.sh
+docker login ghcr.io          # the packages are private
+./provision.sh init --version ${LATEST_VERSION} --clients jupyter,research
+```
+
+Run it from a checkout instead and `--version` is read from the channel's
+`Dockerfile`. `--help` lists every option; `add-client <name>` issues another
+key later, and `status` prints what is provisioned. It is safe to re-run:
+every step checks before it acts, and existing keys and secrets are kept.
+
+Everything lands under `--root` — default `/srv/ib-gateway`, or
+`$XDG_DATA_HOME/ib-gateway` where `/srv` is not writable — and **never in the
+checkout**, so no credential is one `git add` away from a public repository:
+
+| path | what |
+|---|---|
+| `docker-compose.yml` | image-only: no build context, no `$PWD` dependency |
+| `.env` | non-secret settings; no credential is written here |
+| `secrets/` | one `0600` file per secret, mounted at `/run/secrets` |
+| `ssh/` | the gateway's own `~/.ssh` — key, `known_hosts`, `config` |
+| `clients/<name>/` | one key bundle per client that dials in |
+| `bastion/data/` | the bastion's provisioned `/etc` and `/home` |
+| `tls/` | self-signed xrdp material, when TWS is selected |
+
+Then write your IB password into `secrets/tws_password` and start it:
+
+```bash
+cd /srv/ib-gateway
+docker compose up -d
+```
+
+### Reaching the API
+
+**The API port is not published, on purpose.** The IB API has no
+authentication of its own, so anything that can reach the port can place
+orders — reaching it should require a key, not merely a route to the host.
+The gateway opens the port on the bastion's loopback with `ssh -R`, and each
+client forwards it back with `ssh -L` under a key of its own:
+
+```bash
+# in the client container, or wherever your code runs
+ssh -F /srv/ib-gateway/clients/jupyter/ssh_config -N jupyter-bastion
+# then connect to 127.0.0.1:4002 - the paper API - inside that client
+```
+
+Each key is pinned in `authorized_keys` to one direction and one port. Note
+that `permitopen` governs `-L` only and `permitlisten` governs `-R` only, and
+neither constrains the other, so **both** are set on every key: a client can
+open the API port and nothing else, and cannot bind a listener at all; the
+gateway can publish the API port and nothing else, and cannot forward out to
+anything the bastion can see. Neither can run a command or get a shell.
+
+The bastion's host key is read from the `data/` that was just provisioned and
+written into every `known_hosts`, so there is no first-connection window to
+accept blindly — clients run with `StrictHostKeyChecking yes`.
+
+### Secrets
+
+Each secret is a file under `secrets/`, mounted at `/run/secrets/<name>` by
+Compose and named to the container through its `*_FILE` variable — the same
+mechanism described under [Credentials](#credentials) below. The generated
+`.env` contains no credential at all. `file_env` refuses to start when both `VAR` and `VAR_FILE` are set, so
+only the `_FILE` half is ever emitted.
+
+### Upgrading
+
+Pull the new tag and recreate. One thing needs care: the bastion validates a
+checksum over its provisioned `/etc`, and since 2026-08-27 that covers
+`sshd_config.d/` as well. A `data/` provisioned before then makes the
+container refuse to start rather than skip the check — re-run
+`provision.sh init` against it, which keeps the host keys, so no client's
+`known_hosts` changes.
+
 ## How to use it?
 
-Create a `docker-compose.yml` file (or include ib-gateway services on your existing
-one). The [sample file provided](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml)
-can be used as starting point. It carries both images in one file — an
+If you would rather write your own compose file — or fold these services into
+an existing stack — create a `docker-compose.yml` (or include ib-gateway
+services on your existing one). The [sample file provided](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml)
+can be used as starting point. Note that it **builds** from the channel
+directories, which is how the images are developed; for a deployment, drop the
+`build:` blocks and keep the `image:` lines, or use `deploy/provision.sh`
+above, which emits exactly that. It carries both images in one file — an
 `ib-gateway` service and a `tws` service — and `.env` picks which one runs, see
 [Choosing the application](#choosing-the-application).
 
@@ -706,6 +799,7 @@ https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway
 
 [1]: https://github.com/users/dennisdeh/packages/container/package/ib-gateway "ib-gateway"
 [2]: https://github.com/dennisdeh/ib-docker/pkgs/container/tws-rdesktop "tws-rdesktop"
+[3]: https://github.com/dennisdeh/ib-docker/pkgs/container/bastion "bastion"
 
 ## Repo stats
 
