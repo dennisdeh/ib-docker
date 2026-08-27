@@ -8,9 +8,9 @@
 # hadolint global ignore=DL3008,DL4006
 FROM ubuntu:24.04 AS setup
 
-ENV IB_GATEWAY_VERSION=10.48.1e
+ENV IB_GATEWAY_VERSION=10.50.1e
 ENV IB_GATEWAY_CHANNEL=latest
-ENV IBC_VERSION=3.24.1
+ENV IBC_VERSION=3.24.2
 ARG DEBIAN_FRONTEND=noninteractive
 ARG IB_GATEWAY_REPO="https://github.com/dennisdeh/ib-docker"
 ARG IB_GATEWAY_RELEASE_URL="${IB_GATEWAY_REPO}/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}"
@@ -20,7 +20,7 @@ ARG IBC_URL="${IBC_REPO}/releases/download/${IBC_VERSION}/${IBC_FILE}"
 # IBC publishes no checksum file, so the digest is pinned here and MUST be
 # updated with IBC_VERSION. .github/workflows/detect-ibc-release.yml recomputes
 # it when it opens a version-bump PR. Measured 2026-08-25 for 3.24.1.
-ARG IBC_SHA256=d99ee28cc3539e3843fb00d28dc484c255006b0063d38f0808ac3ef07dd88bb8
+ARG IBC_SHA256=cc097ca1dfa75413a5fbe02e4743050af15f3308eb6a97c769b3cff9850c80c5
 
 WORKDIR /tmp/setup
 
@@ -77,7 +77,7 @@ COPY ./scripts /root/scripts
 
 FROM ubuntu:24.04
 
-ENV IB_GATEWAY_VERSION=10.48.1e
+ENV IB_GATEWAY_VERSION=10.50.1e
 # IB Gateway user constants
 ARG USER_ID="${USER_ID:-1000}"
 ARG USER_GID="${USER_GID:-1000}"

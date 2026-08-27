@@ -12,7 +12,7 @@
 # image it has just built instead of at ghcr.io, which is not anonymously
 # pullable. See docs/DECISIONS.md.
 ARG IB_GATEWAY_BASE_IMAGE=ghcr.io/dennisdeh/ib-gateway
-ARG IB_VERSION=10.48.1e
+ARG IB_VERSION=10.50.1e
 FROM ${IB_GATEWAY_BASE_IMAGE}:${IB_VERSION} AS setup
 
 WORKDIR /
@@ -23,9 +23,9 @@ WORKDIR /
 
 FROM lscr.io/linuxserver/rdesktop:ubuntu-xfce
 
-ENV IB_GATEWAY_VERSION=10.48.1e
+ENV IB_GATEWAY_VERSION=10.50.1e
 ENV IB_GATEWAY_RELEASE_CHANNEL=latest
-ENV IBC_VERSION=3.24.1
+ENV IBC_VERSION=3.24.2
 
 # IB Gateway user constants
 # IBC env vars
