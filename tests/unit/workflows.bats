@@ -190,13 +190,12 @@ line_of() {
 
 @test "publish: ghcr links the bastion package to this repository" {
 	# ghcr.io reads org.opencontainers.image.source to attach a package to a
-	# repository; pointing it elsewhere leaves the package orphaned.
-	run grep -q 'org.opencontainers.image.source=https://github.com/dennisdeh/' \
+	# repository; pointing it elsewhere leaves the package orphaned. It named
+	# dennisdeh/docker-bastion - which is not this repository - until
+	# 2026-08-27, so match the whole value rather than just the owner.
+	run grep -q 'org.opencontainers.image.source=https://github.com/dennisdeh/ib-docker$' \
 		"${ROOT}/bastion/Dockerfile"
 	[ "$status" -eq 0 ]
-	run grep -q 'image.source=https://github.com/dennisdeh/docker-bastion' \
-		"${ROOT}/bastion/Dockerfile"
-	[ "$status" -ne 0 ]
 }
 
 @test "detect-ibc: the pinned IBC digest is verified every run" {
@@ -238,7 +237,9 @@ line_of() {
 }
 
 @test "publish: emits the three tags template_README.md documents" {
-	# version, major.minor, channel - for each of the two images.
+	# version, major.minor, channel - for each of the two IB images, which is
+	# why the expected count is 2 and not 3. The bastion has no IB version, so
+	# it is tagged from its own ARG IMAGE_VERSION by a separate meta step.
 	run grep -c 'type=raw,value=${{ steps.version.outputs.version }}' "${WORKFLOWS}/publish.yml"
 	[ "$output" = "2" ]
 	run grep -c 'type=raw,value=${{ steps.version.outputs.minor }}' "${WORKFLOWS}/publish.yml"
@@ -302,6 +303,51 @@ line_of() {
 	run step_block "${WORKFLOWS}/detect-releases.yml" "Record what to publish"
 	[ -n "$output" ]
 	[[ $output != *"if:"* ]]
+}
+
+# The README's Supported Tags table names an IBC version per channel. It used to
+# read one IBC_VERSION from Dockerfile.template and print it on every row, so
+# whenever the two channels differed - the normal state between an IBC release
+# and the next gateway one, see docs/DECISIONS.md #2 - the table asserted
+# something false about one of them. tests/unit/naming.bats reproduces the
+# substitution and diffs the committed README; this pins the workflow that will
+# regenerate it, which that check cannot see.
+@test "detect-releases: the README takes IBC from each channel, not the template" {
+	local step
+	step="$(step_block "${WORKFLOWS}/detect-releases.yml" "Update README")"
+	[ -n "$step" ]
+
+	[[ $step == *'LATEST_IBC=$(grep '"'"'ENV IBC_VERSION'"'"' $_latest_dockerfile'* ]] || {
+		echo "LATEST_IBC is not read from latest/Dockerfile:"
+		echo "$step"
+		return 1
+	}
+	[[ $step == *'STABLE_IBC=$(grep '"'"'ENV IBC_VERSION'"'"' $_stable_dockerfile'* ]] || {
+		echo "STABLE_IBC is not read from stable/Dockerfile:"
+		echo "$step"
+		return 1
+	}
+	# Dockerfile.template holds what the *next* release ships. Reading it here
+	# is the defect above.
+	[[ $step != *"IBC_VERSION' Dockerfile.template"* ]] || {
+		echo "the README still takes its IBC version from Dockerfile.template"
+		return 1
+	}
+}
+
+@test "detect-releases: envsubst substitutes exactly the documented variables" {
+	# envsubst with an explicit list leaves anything unlisted as literal text,
+	# so a template placeholder that is not named here reaches README.md
+	# verbatim - and a name listed here but absent from the template silently
+	# does nothing. Both are caught by keeping the list pinned.
+	local step line
+	step="$(step_block "${WORKFLOWS}/detect-releases.yml" "Update README")"
+	line="$(grep -o "envsubst '[^']*'" <<<"$step")"
+	[ "$line" = "envsubst '\$LATEST_VERSION,\$LATEST_MINOR,\$LATEST_IBC,\$STABLE_VERSION,\$STABLE_MINOR,\$STABLE_IBC,\$BASTION_VERSION'" ] || {
+		echo "unexpected envsubst variable list: ${line}"
+		echo "keep it in step with readme_vars() in tests/unit/naming.bats"
+		return 1
+	}
 }
 
 # Everything above reads the workflows as text. What follows runs the shell they

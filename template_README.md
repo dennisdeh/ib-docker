@@ -1,8 +1,8 @@
-# Interactive Brokers Gateway Docker
+# ib-docker
 
 [![Build](https://github.com/dennisdeh/ib-docker/actions/workflows/on-push-n-pr.yml/badge.svg?branch=master)](https://github.com/dennisdeh/ib-docker/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![GitHub Issues](https://img.shields.io/github/issues/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/issues) [![GitHub Repo stars](https://img.shields.io/github/stars/dennisdeh/ib-docker)](#repo-stats) [![GitHub forks](https://img.shields.io/github/forks/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/network/members)
 
-<img src="https://github.com/dennisdeh/ib-docker/blob/master/logo.png" height="300" class="center" alt="IB Gateway Docker"/>
+<img src="https://github.com/dennisdeh/ib-docker/blob/master/logo.png" height="300" class="center" alt="ib-docker"/>
 
 ## Credits
 
@@ -18,10 +18,23 @@ against those repositories, and issues found here are fixed here.
 
 ## What is it?
 
-A docker image to run Interactive Brokers Gateway and TWS without any human
-interaction on a docker container
+Three images that run Interactive Brokers' desktop software headless, with
+nobody at the keyboard:
 
-It includes:
+| image | what it is |
+| --- | --- |
+| [ib-gateway][1] | IB Gateway driven by IBC under Xvfb. The API is reached through socat, or through an ssh tunnel with no port published at all. |
+| [tws-rdesktop][2] | Trader Workstation on an xrdp/xfce desktop, for the things only the full client can do. Same versions, same variables. |
+| [bastion][3] | A hardened ssh jump host. The gateway opens the API port on it and each client dials back in under its own restricted key. |
+
+One [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml)
+runs all three: `ib-gateway` and `tws` sit behind
+[Compose profiles](#choosing-the-application) so you pick one, and the bastion
+always starts. For a host that should simply *run* this rather than build it,
+[`deploy/provision.sh`](#deploying) sets one up end to end from the published
+images.
+
+Between them they include:
 
 - [IB Gateway](https://www.interactivebrokers.com/en/index.php?f=16457) ([stable](https://www.interactivebrokers.com/en/trading/ibgateway-stable.php) or [latest](https://www.interactivebrokers.com/en/trading/ibgateway-latest.php))
 - Trader Workstation [TWS](https://www.interactivebrokers.com/en/trading/tws-offline-installers.php) ([stable](https://www.interactivebrokers.com/en/trading/tws-offline-stable.php) or [latest](https://www.interactivebrokers.com/en/trading/tws-offline-latest.php)), from `10.26.1h`
@@ -38,12 +51,27 @@ It includes:
 - Optional remote [SSH tunnel](https://manpages.ubuntu.com/manpages/noble/en/man1/ssh.1.html)
   to provide secure connections for both IB Gateway and VNC. Only available for
   `10.19.2g-stable` and `10.25.1o-latest` or greater.
+- A hardened [ssh bastion](https://github.com/dennisdeh/ib-docker/blob/master/bastion/README.md)
+  to terminate that tunnel, published as an image of its own so a host can run
+  the whole stack without building anything.
 - Support parallel execution of `live` and `paper` trading mode.
 - [Secrets](#credentials) support (latest `10.29.1e`, stable `10.19.2m` or greater)
 - Experimental [aarch64](#aarch64-support) support, ex raspberry pi, M1,M2,M3,.., since `10.37.1l`/`10.39.1e`
 - Execution of custom scripts during [star-up process](#start-up-scripts).
 - Works well together with [Jupyter Quant](https://github.com/quantbelt/jupyter-quant)
   docker image.
+
+## Where things are documented
+
+| you want to | read |
+| --- | --- |
+| set a host up from the published images | [Deploying](#deploying) |
+| configure a container | [Configuration](#configuration), [Ports](#ports) |
+| reach the API from another container or machine | [Reaching the API](#reaching-the-api), [SSH Tunnel](#ssh-tunnel) |
+| run or provision the ssh bastion by hand | [bastion/README.md](https://github.com/dennisdeh/ib-docker/blob/master/bastion/README.md) |
+| change the image, and get the change published | [CONTRIBUTING.md](https://github.com/dennisdeh/ib-docker/blob/master/CONTRIBUTING.md) |
+| operate, restart or recover a running stack | [docs/RUNBOOK.md](https://github.com/dennisdeh/ib-docker/blob/master/docs/RUNBOOK.md) |
+| find out why something is the way it is | [docs/DECISIONS.md](https://github.com/dennisdeh/ib-docker/blob/master/docs/DECISIONS.md), [docs/OPEN_ITEMS.md](https://github.com/dennisdeh/ib-docker/blob/master/docs/OPEN_ITEMS.md) |
 
 ## Supported Tags
 
@@ -52,14 +80,20 @@ tunnel dials — for `linux/amd64` and `linux/arm64`, with the following tags:
 
 | Image| Channel  | IB Gateway Version  | IBC Version      | Docker Tags                                    |
 | --- | -------- | ------------------- | ---------------- | ---------------------------------------------- |
-| [ib-gateway][1] | `latest` | `${LATEST_VERSION}` | `${IBC_VERSION}` | `latest` `${LATEST_MINOR}` `${LATEST_VERSION}` |
-| [ib-gateway][1] |`stable` | `${STABLE_VERSION}` | `${IBC_VERSION}` | `stable` `${STABLE_MINOR}` `${STABLE_VERSION}` |
-| [tws-rdesktop][2] | `latest` | `${LATEST_VERSION}` | `${IBC_VERSION}` | `latest` `${LATEST_MINOR}` `${LATEST_VERSION}` |
-| [tws-rdesktop][2] |`stable` | `${STABLE_VERSION}` | `${IBC_VERSION}` | `stable` `${STABLE_MINOR}` `${STABLE_VERSION}` |
-| [bastion][3] | — | — | — | `latest` and its own image version |
+| [ib-gateway][1] | `latest` | `${LATEST_VERSION}` | `${LATEST_IBC}` | `latest` `${LATEST_MINOR}` `${LATEST_VERSION}` |
+| [ib-gateway][1] |`stable` | `${STABLE_VERSION}` | `${STABLE_IBC}` | `stable` `${STABLE_MINOR}` `${STABLE_VERSION}` |
+| [tws-rdesktop][2] | `latest` | `${LATEST_VERSION}` | `${LATEST_IBC}` | `latest` `${LATEST_MINOR}` `${LATEST_VERSION}` |
+| [tws-rdesktop][2] |`stable` | `${STABLE_VERSION}` | `${STABLE_IBC}` | `stable` `${STABLE_MINOR}` `${STABLE_VERSION}` |
+| [bastion][3] | — | — | — | `latest` `${BASTION_VERSION}` |
 
 All tags are available in the container repository for [ib-gateway][1] and
 [tws-rdesktop][2]. IB Gateway and TWS share the same version numbers and tags.
+
+The two channels can carry **different IBC versions**, and the table reads each
+one from that channel's own image rather than assuming they agree: a new IBC
+release lands in the build templates first and reaches a channel when that
+channel next moves. So a difference between the two rows is the normal state
+between an IBC release and the next IB Gateway one, not a packaging mistake.
 
 The bastion carries no IB version — it is the ssh jump host, and it changes on
 its own schedule, so it is tagged with a version of its own. Publishing it
@@ -99,7 +133,15 @@ checkout**, so no credential is one `git add` away from a public repository:
 | `bastion/data/` | the bastion's provisioned `/etc` and `/home` |
 | `tls/` | self-signed xrdp material, when TWS is selected |
 
-Then write your IB password into `secrets/tws_password` and start it:
+**The only port the emitted stack publishes is the bastion's ssh port**, and on
+`127.0.0.1` unless `--bastion-bind` says otherwise. Nothing else is reachable
+from outside the host — see [Reaching the API](#reaching-the-api) for why, and
+for how a client gets to it.
+
+`init` offers to take the IB password interactively. If you decline, it writes
+`secrets/tws_password` empty and says so twice: the gateway will start and then
+fail its IB login until the file has a password in it. Either way, finish and
+start it with:
 
 ```bash
 cd /srv/ib-gateway
@@ -272,7 +314,8 @@ SSH_VNC_PORT=
 Once `docker-compose.yml` and `.env` are in place you can start the container with:
 
 ```bash
-docker compose up
+docker compose up -d
+docker compose logs -f
 ```
 
 To get a GUI you can use vnc for ib-gateway or RDP for TWS.
@@ -375,6 +418,21 @@ TWS image uses the following ports
 | 7498 | TWS API port for live accounts. Through socat, internal TWS API port 7496. Mapped **externally** to 7496 by the `tws` service of the sample `docker-compose.yml`.  |
 | 7499 | TWS API port for paper accounts. Through socat, internal TWS API port 7497. Mapped **externally** to 7497 by the `tws` service of the sample `docker-compose.yml`. |
 | 3389 | Port for RDP server. Mapped **externally** to 3370 by the `tws` service of the sample `docker-compose.yml`.  |
+
+The bastion uses one port, and it is the only one in the sample file that is
+*meant* to be reachable:
+
+| Port | Description   |
+| ---- | --- |
+| 22 | sshd. Mapped **externally** to `SSH_LISTEN_PORT` (`22222` in `.env-dist`) by the `bastion` service. This is the port a tunnel dials; nothing on it gets a shell. |
+
+Every host-side number above is a default. In the sample
+`docker-compose.yml` they are read from `.env` — `PORT_HOST_TWS_LIVE`,
+`PORT_HOST_TWS_PAPER` and `PORT_HOST_VNC_SERVER` for the gateway,
+`PORT_HOST_RDESKTOP_LIVE`, `PORT_HOST_RDESKTOP_PAPER` and `PORT_HOST_RDP` for
+TWS, `SSH_LISTEN_PORT` for the bastion — so two stacks can run side by side
+without editing the compose file. See
+[.env-dist](https://github.com/dennisdeh/ib-docker/blob/master/.env-dist).
 
 Utility [socat](https://manpages.ubuntu.com/manpages/noble/en/man1/socat.1.html) is used to publish TWS API port from container's `127.0.0.1:4001/4002` to container's `0.0.0.0:4003/4004`, the sample `docker-compose.yml` maps ports to the host back to `4001/4002`. This way any application can use the "standard" IB Gateway ports. For TWS `127.0.0.1:7496/7497` to container's `0.0.0.0:7498/7499`, and the `tws` service will map ports to host back to `7496/7497`.
 
@@ -514,6 +572,10 @@ If you want to connect to IB Gateway from a remote device, consider adding an
 additional layer of security (e.g. TLS/SSL or SSH tunnel) to protect the
 'plain text' TCP sockets against unauthorized access or manipulation.
 
+The strongest of the configurations below is the last one, and
+[Deploying](#deploying) sets it up for you: no API port published anywhere,
+reached only through a key that is restricted to that one port.
+
 #### Possible IB API port configurations
 
 Some examples of possible configurations
@@ -559,20 +621,20 @@ container DOES NOT run an SSH server (sshd), what it does is to create a
 using ssh client. So basically it will connect to an ssh server and expose IB
 Gateway port there.
 
-An example setup would be to run
-[ib-docker](https://github.com/dennisdeh/ib-docker) with a
-sidecar [ssh bastion](https://github.com/dennisdeh/docker-bastion) and a
-[jupyter-quant](https://github.com/quantbelt/jupyter-quant), which provides a
-fully working algorithmic trading environment. In simple terms ib gateway opens
-a **remote** port on ssh bastion and listen to connections on it. While
-[jupyter-quant](https://github.com/quantbelt/jupyter-quant) will open a **local**
-port that is tunneled into bastion on the same port opened by
-ib-docker. This combination of tunnels will expose IB API port into
-[jupyter-quant](https://github.com/quantbelt/jupyter-quant) making it available
-for use with [ib_insync](https://github.com/erdewit/ib_insync). The only port
-available to the outside world is the
-[ssh bastion](https://github.com/dennisdeh/docker-bastion) port, which has hardened
-security defaults and cryptographic key authentication.
+The bastion that terminates the tunnel ships with this repository — it is the
+[bastion][3] image and the third service in the sample `docker-compose.yml`, so
+there is nothing separate to install. An example setup runs the gateway with
+that bastion as a sidecar and a client such as
+[jupyter-quant](https://github.com/quantbelt/jupyter-quant) beside it, which
+together make a working algorithmic trading environment. IB Gateway opens a
+**remote** port on the bastion and listens on it; the client opens a **local**
+port tunnelled into the bastion on that same port. The pair of tunnels puts the
+IB API inside the client container, ready for
+[ib_async](https://github.com/ib-api-reloaded/ib_async) — the maintained
+successor to [ib_insync](https://github.com/erdewit/ib_insync), which is
+archived. The only port reachable from outside is the bastion's, which is
+publickey-only, gives no shell, and is described in
+[bastion/README.md](https://github.com/dennisdeh/ib-docker/blob/master/bastion/README.md).
 
 Sample ssh tunnels for reference.
 
@@ -617,6 +679,24 @@ automatically if it's stopped, and will keep trying to restart it.
   form `user@server`
 - `SSH_PASSPHRASE`: Not mandatory, but strongly recommended. If set it will
   start `ssh-agent` and add ssh keys to agent. `ssh` will use `ssh-agent`.
+
+**Restrict the key on the server, in `authorized_keys`.** A tunnel key needs no
+shell and no other port, and saying so takes two options that are easy to get
+half right: `permitopen` governs `-L` only, `permitlisten` governs `-R` only,
+and **neither constrains the other**, so a key that names one of them leaves
+the other direction wide open. Set both on every key, pinning the direction you
+do not use to something unbindable:
+
+```text
+# the gateway's key: may publish the API port, may forward nowhere
+restrict,port-forwarding,permitlisten="127.0.0.1:4002",permitopen="127.0.0.1:1" ssh-ed25519 AAAA...
+
+# a client's key: may reach the API port, may publish nothing
+restrict,port-forwarding,permitopen="127.0.0.1:4002",permitlisten="127.0.0.1:1" ssh-ed25519 AAAA...
+```
+
+`deploy/provision.sh` writes exactly these lines for you — see
+[Reaching the API](#reaching-the-api).
 
 In addition to the environment variables listed above you need to pass ssh keys
 to `ib-docker` container. This is achieved through a volume mount
@@ -683,7 +763,10 @@ secrets:
 
 The repository's own [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml)
 is a full working example of both: it carries an `ib-gateway` service, a `tws`
-service and the bastion in one file.
+service and the bastion in one file. It takes credentials from the environment,
+because it is the file the image is *developed* with. For a deployment, use
+[Deploying](#deploying) instead: it emits a compose file that uses `secrets:`
+throughout and writes no credential into `.env` at all.
 
 ### RDP
 
@@ -702,6 +785,11 @@ In case you experience problems with the API connection, you can restart the `so
 docker exec -it algo-trader-ib-gateway-1 pkill -x socat
 ```
 
+That name is Compose's default, `<project>-<service>-<n>`, matching the
+`name: algo-trader` sample above. The repository's own `docker-compose.yml`
+sets `container_name`, so there the container is just `ib-gateway` — check with
+`docker compose ps` before copying the command.
+
 After `SSH_RESTART` seconds socat will restart the connection. If `SSH_RESTART`
 is not set, by default the restart period will be 5 seconds.
 
@@ -716,19 +804,19 @@ value in seconds defined in `SSH_RESTART`.
 
 ## aarch64 support
 
-This is experimental, so expects bugs.
-
-Please go to discussions section to see common problems. Avoid creating issues unless
-you have empirically probed that is a bug, ie it does not work to me is not a bug.
+This is experimental, so expect bugs. Please check
+[open issues](https://github.com/dennisdeh/ib-docker/issues) before opening one, and
+include what you ran and what the container logged — "it does not work for me"
+cannot be acted on.
 
 To use aarch64 you just need to run:
 
 ```bash
 # set IB_APP in .env to ib-gateway or tws, then
-docker compose up
+docker compose up -d
 ```
 
-This will pull the right image for aarch64 architecture.
+Compose selects the aarch64 image; the manifest carries both architectures.
 
 The aarch64 image installs Interactive Brokers' own `arm` installer, so a
 channel can only publish `linux/arm64` for a version whose
@@ -755,51 +843,85 @@ The installer files stored on
 [releases](https://github.com/dennisdeh/ib-docker/releases) have been
 downloaded from IB homepage and renamed to reflect the version.
 
-IF you feel adventurous and you want to download Gateway installer from IB
-homepage directly, or use your local installation file, change this line
-on [Dockerfile.template](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile.template)
-`RUN curl -sSL
-https://github.com/dennisdeh/ib-docker/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
---output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh` to download
-(or copy) the file from the source you prefer.
+Each release here carries **two** installers, `…-standalone-linux-x64.sh` and
+`…-standalone-linux-arm.sh`, and the build picks by architecture — every IB
+installer bundles the JRE for its own, so the x64 one cannot install on
+aarch64. A version whose release predates that and carries only the x64 asset
+can be built for `linux/amd64` only.
 
-**Example:** change to `RUN curl -sSL https://download2.interactivebrokers.com/installers/ibgateway/stable-standalone/ibgateway-stable-standalone-linux-x64.sh --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh` for using current stable version from IB homepage.
+If you would rather fetch the installer from IB directly, or use a copy you
+already have, change the download in
+[Dockerfile.template](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile.template).
+It is not a single `curl` line — it selects the file and verifies it:
+
+```docker
+if [ "$(uname -m)" = "aarch64" ]; then ib_arch=arm; else ib_arch=x64; fi && \
+ib_file="ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-${ib_arch}.sh" && \
+curl -sSOLf "${IB_GATEWAY_RELEASE_URL}/${ib_file}" && \
+curl -sSOLf "${IB_GATEWAY_RELEASE_URL}/${ib_file}.sha256" && \
+sha256sum --check "./${ib_file}.sha256" && \
+```
+
+Repointing `ARG IB_GATEWAY_RELEASE_URL` is enough if the new location serves the
+matching `.sha256` beside the installer; drop the second `curl` and the
+`sha256sum --check` line as well if it does not. A build that fails *at* the
+checksum step usually means the release asset is missing rather than that the
+Dockerfile is wrong — `curl -sSOLf` fails on a 404 instead of saving the error
+page, so an unexpected filename shows up there.
 
 ### How to build locally step by step
 
-1. Clone this repo
+1. Clone the repository. `latest/` and `stable/` are ready-to-build contexts,
+   one IB Gateway version each, generated by `update.sh` from the templates:
 
     ```bash
-      git clone https://github.com/dennisdeh/ib-docker
+    git clone https://github.com/dennisdeh/ib-docker
+    cd ib-docker
+    docker build -t ib-gateway:local ./latest
     ```
 
-1. Change docker file to use your local IB Gateway installer file, instead of
-   Loading it from this project releases: Open `Dockerfile` on editor and
-   replace this lines:
+   That is the whole of it when the version you want has a release here. Through
+   Compose it is `docker compose build --pull ib-gateway`; name the service,
+   because the two applications sit behind profiles.
+
+1. To use an installer of your own, put it in the channel directory and replace
+   the download with a `COPY`. `Dockerfile.template` marks the spot:
 
    ```docker
-   RUN curl -sSL https://github.com/dennisdeh/ib-docker/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh \
-       --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
-   RUN curl -sSL https://github.com/dennisdeh/ib-docker/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256 \
-       --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256
+   # Use this instead of "RUN curl .." to install a local file:
+   #COPY ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh .
    ```
 
-   with
+   Name the file so `${IB_GATEWAY_VERSION}` matches `ENV IB_GATEWAY_VERSION` in
+   the Dockerfile, and remove the `curl`/`sha256sum --check` lines shown above
+   along with it.
 
-   ```docker
-   COPY ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
-   ```
+1. IBC is verified against a **digest pinned in the Dockerfile**, because IBC
+   publishes no checksum file. `ARG IBC_SHA256` must move whenever
+   `ENV IBC_VERSION` does, or the build stops at the check — which is the
+   intended behaviour, not a bug. `sha256sum IBCLinux-<version>.zip` gives the
+   value to paste in.
 
-1. Remove `RUN sha256sum --check
-   ./ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256` from
-   Dockerfile (unless you want to keep checksum-check)
-1. Download IB Gateway and name the file
-   `ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh`, where
-   `{IB_GATEWAY_VERSION}` must match the version as configured on Dockerfile
-   (first line)
-1. Download IBC and name the file `IBCLinux-${IBC_VERSION}.zip`, where
-   `{IBC_VERSION}` must match the version as configured on Dockerfile
-1. Build and run: `docker-compose up --build`
+1. Edit `Dockerfile.template` and `image-files/`, never the channel copies, then
+   regenerate. A change written into `latest/` or `stable/` is destroyed by the
+   next release run, silently:
+
+    ```bash
+    ./update.sh latest ${LATEST_VERSION}
+    ./update.sh stable ${STABLE_VERSION}
+    ```
+
+1. To build the other architecture on an x86 machine, register the emulator
+   once and pass `--platform`. Expect it to be slow — most of it is the IB
+   installer under emulation:
+
+    ```bash
+    docker run --privileged --rm tonistiigi/binfmt --install arm64
+    docker build --platform linux/arm64 -t ib-gateway:arm64 ./latest
+    ```
+
+See [CONTRIBUTING.md](https://github.com/dennisdeh/ib-docker/blob/master/CONTRIBUTING.md)
+for the lint and test commands a change is expected to pass.
 
 [1]: https://github.com/users/dennisdeh/packages/container/package/ib-gateway "ib-gateway"
 [2]: https://github.com/dennisdeh/ib-docker/pkgs/container/tws-rdesktop "tws-rdesktop"

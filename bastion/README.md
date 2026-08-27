@@ -40,12 +40,16 @@ cp /home/{$USERS}/.ssh/authorized_keys $PWD/data/home/{$USERS}/.ssh
 
 - Provision the `data` folder. This is required to create the folder structure required by SSH bastion. See more details on [provisioning](#provision)
 
-- We are ready to go
+- We are ready to go. The image is published, so there is nothing to build:
 
 ```bash
-docker build --no-cache --progress=plain -f Dockerfile -t dennisdeh/bastion:local-resolute .
-docker compose up
+docker login ghcr.io            # the package is private
+docker pull ghcr.io/dennisdeh/bastion:latest
+docker compose up -d
 ```
+
+  To build it yourself instead — a change to this directory, or no access to
+  the registry — see [Build the image](#build-the-image).
 
 - Test your setup. See more [examples](#ssh-bastion-use-cases) below
 
@@ -71,7 +75,7 @@ mkdir -p $PWD/data/home/bastion/.ssh
 cp authorized_keys $PWD/data/home/bastion/.ssh
 # run provision
 docker run -it --rm -v $PWD/data:/data --env-file .env \
-  dennisdeh/bastion /provision.sh
+  ghcr.io/dennisdeh/bastion:latest /provision.sh
 # start up your SSH bastion
 docker compose up -d && docker compose logs -ft
 ```
@@ -79,6 +83,13 @@ docker compose up -d && docker compose logs -ft
 Below you will find the available [environment variables](#environment-variables), how to [build](#build-the-image) the image, more details on the [provisioning](#provision) process, running a [bastion container](#run-the-container), managing [user access](#user-access), how to setup your [ssh clinets](#client-setup), the many [use cases](#ssh-bastion-use-cases) for an SSH bastion, [multi-factor](#setting-mfatotp-optional) authentication or MFA/TOTP and certificate authorities [CA](#use-a-certificate-authority). Enjoy the reading.
 
 ### Set up with the ib-gateway
+
+> **`deploy/provision.sh init` in the repository root does everything in this
+> section**, and does it with restricted `authorized_keys` entries — see
+> [Restricting a tunnel key](#restricting-a-tunnel-key) — plus the gateway's
+> `known_hosts` filled in from the host key it just generated. Follow the steps
+> below when you want to understand what it does, or to do it by hand. See the
+> *Deploying* section of the top-level `README.md`.
 
 1. First generate an ssh key pair for the ibgateway user (from the ib-gateway container, same vnet):
 
@@ -93,7 +104,7 @@ sudo rm -rf data/etc data/home          # remove the bogus auto-created dirs
 mkdir -p data/home/ibgateway/.ssh
 cp <ibgateway_pubkey>.pub data/home/ibgateway/.ssh/authorized_keys
 docker run -it --rm -e USERS=ibgateway --env-file .env \
-  -v "$PWD/data:/data" dennisdeh/bastion:local-resolute /provision.sh
+  -v "$PWD/data:/data" ghcr.io/dennisdeh/bastion:latest /provision.sh
 ```
 
 1. Generate the ssh key pair for the other user (the remote client) and copy it from the repository root to the data folder:
@@ -112,7 +123,7 @@ cp id_ed25519.pub data/home/deh/.ssh/authorized_keys
 
 ```bash
 docker run -it --rm -e USERS=deh,ibgateway --env-file .env \
-  -v "$PWD/data:/data" dennisdeh/bastion:local-resolute /provision.sh
+  -v "$PWD/data:/data" ghcr.io/dennisdeh/bastion:latest /provision.sh
 ```
 
 1. Verify that both users are created for the bastion
@@ -132,7 +143,7 @@ ssh -i ~/.ssh/id_ed25519_remote -p 22222 -N \
 Install a different key
 
 ```bash
-cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-docker"
+cd <your checkout>/bastion
 sudo cp ~/.ssh/id_ed25519.pub data/home/deh/.ssh/authorized_keys
 sudo chown 1001:1001 data/home/deh/.ssh/authorized_keys
 sudo chmod 640      data/home/deh/.ssh/authorized_keys
@@ -158,8 +169,10 @@ The following variables are available in the .env file
 | CA_ENABLED | 'no' | set to 'yes' to enable SSH CA mode |
 | SSHD_HOST_CERT | '/etc/ssh/ssh_host_ed25519_key-cert.pub' | CA signed host certificate. You will need to copy it into ./data/etc/ssh directory |
 | SSHD_USER_CA | '/etc/ssh/user_ca.pub' | public CA key. You will need to copy it into ./data/etc/ssh directory |
-| IMAGE_VERSION | | Used during build to tag the image. |
-| BASE_VERSION | jammy | Ubuntu base image. Used during build. |
+| CONTAINER_NAME_BASTION | bastion | Name given to the container. |
+| DNS | blank | Optional DNS server for the container, so clients can use names rather than IP addresses. Commented out in `docker-compose.yml` by default. |
+| IMAGE_VERSION | 2604.01 | The image's own version, independent of any IB Gateway release. `ARG IMAGE_VERSION` in the `Dockerfile` is the declaration; `.github/workflows/publish.yml` reads it to tag the published image and `deploy/provision.sh` reads it to pick which tag to pull, so **that one line is the place to bump it**. |
+| BASE_VERSION | resolute | Ubuntu base image. Used during build. |
 
 After you have set your .env file check that the configuration is correct.
 
@@ -173,15 +186,29 @@ In addition to environment variables, you can modify the behavior of SSH bastion
 
 ## Build the image
 
-Optionally you can build the image by following the steps below.
+The image is published to the [github container registry](https://github.com/dennisdeh/ib-docker/pkgs/container/bastion)
+as `ghcr.io/dennisdeh/bastion`, for `linux/amd64` and `linux/arm64`, tagged
+`latest` and with its own `IMAGE_VERSION`. It is not on Docker Hub. The package
+is private, so `docker login ghcr.io` first.
+
+You only need to build it to change it — or when a freshly bumped
+`IMAGE_VERSION` has no published tag yet:
 
 ```bash
 docker compose build
 ```
 
-If defined `APT_PROXY` will be used during build time to speed up the build.
+Both this file and the repository's root `docker-compose.yml` carry
+`pull_policy: build` on this service, so a `docker compose up` here builds from
+this directory rather than reaching for the private tag.
 
-The image is published to the [github container registry](https://github.com/dennisdeh/ib-docker/pkgs/container/bastion) as `ghcr.io/dennisdeh/bastion`, for `linux/amd64` and `linux/arm64`. It is not on Docker Hub.
+If defined, `APT_PROXY` is used during build time to speed the build up.
+
+**Bumping the image:** edit `ARG IMAGE_VERSION` in the `Dockerfile`. That
+declaration is what `publish.yml` tags the published image with and what
+`deploy/provision.sh` pulls, so it is the single place to change. It was once
+used by a `LABEL` without being declared at all, which made every image report
+its version as `-resolute`.
 
 ## Provision
 
@@ -193,11 +220,26 @@ Before you can use a container you need to provision the `./data` host directory
   - /data/etc/passwd + shadow + group , based on users created
   - /data/etc/ssh/* , store ssh config and host keys
   - /data/home/*/.ssh/authorized_keys --> sets authorized_keys permissions
-- Create a provisioned hash signature
-  - /etc/passwd + /etc/shadow + authorized_keys
-  - /data/etc/ssh/bastion_provisioned_hash
-  - signatures are verified on every start by entrypoint script.
+- Create a provisioned hash signature, in `/data/etc/ssh/bastion_provisioned_hash`,
+  covering
+  - `/etc/passwd`, `/etc/shadow` and each user's `authorized_keys`
+  - `sshd_config` and the ssh host keys
+  - the host and user CA files, when `CA_ENABLED=yes`
+  - **everything in `/etc/ssh/sshd_config.d/`, plus a listing of that
+    directory.** The listing is hashed as well as the files because a per-file
+    hash cannot notice a drop-in being *added* or *removed* — every recorded
+    line still checks out — and `sshd_config` opens with
+    `Include /etc/ssh/sshd_config.d/*.conf`, so an unhashed drop-in could
+    change any setting. Added 2026-08-27.
+  - `bastion_provisioned_hash.sum` is written beside it, a digest of that list.
+    The list is what `entrypoint.sh` verifies with `sha256sum -c` on every
+    start; the `.sum` file lets the list itself be checked.
 - If `./data` bind mount is already provisioned it will use existing files
+
+> **Data provisioned before 2026-08-27 has no recorded `sshd_config.d` listing,
+> and the container stops rather than skipping the check.** Re-run the provision
+> script against the existing `data/`: it is idempotent and keeps the host keys,
+> so no client's `known_hosts` changes.
 
 The container will mount all those files in read-only mode (unless you are using TOTP which requires write permissions in `/home`)
 
@@ -229,8 +271,11 @@ The provision script will create a hash signature, so if you modify data/etc con
 
 Edit the docker-compose.yml file, the default values should work just fine. You can define a DNS or 'extra_hosts', this will allow SSH clients to use server names rather than IP addresses.
 
+This is [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/bastion/docker-compose.yml)
+in this directory. The root `docker-compose.yml` one level up carries the same
+service alongside the gateway and TWS.
+
 ```yaml
-version: "3.6"
 services:
   bastion:
     build:
@@ -238,13 +283,14 @@ services:
       platforms:
         - "linux/amd64"
         - "linux/arm64"
-        - "linux/arm/v7"
       args:
         APT_PROXY: ${APT_PROXY}
         BASE_VERSION: ${BASE_VERSION}
         IMAGE_VERSION: ${IMAGE_VERSION}
-    image: dennisdeh/bastion:${IMAGE_VERSION}-${BASE_VERSION}
     restart: unless-stopped
+    pull_policy: build
+    image: ghcr.io/dennisdeh/bastion:latest
+    container_name: ${CONTAINER_NAME_BASTION:-bastion}
     ports:
       - ${SSH_LISTEN_PORT}:22
     # optional
@@ -284,7 +330,7 @@ When the container starts, it will
 To run the container
 
 ```bash
-docker compose up -d; docker-compose logs -f
+docker compose up -d && docker compose logs -f
 ```
 
 If you modify the data directory manually, you might need to run again the provision script. This will generate updated checksums that will pass validation during start-up.
@@ -302,17 +348,51 @@ To add more users, the easiest option is to edit your .env file, set USERS and r
 ```bash
 docker run -it --rm -e USERS=new_user,another_user \
   -v $PWD/data:/data \
-  dennisdeh/bastion /provision.sh
+  ghcr.io/dennisdeh/bastion:latest /provision.sh
 ```
 
 Disable existing users
 
 ```bash
 docker run -it --rm -v $PWD/data:/data \
-  dennisdeh/bastion adduser --disable-login user_name
+  ghcr.io/dennisdeh/bastion:latest adduser --disable-login user_name
 ```
 
 You can add authorized_keys as explained in [provision](#provision) section.
+
+### Restricting a tunnel key
+
+A key that only carries a tunnel needs no shell and no port other than its own,
+and `authorized_keys` can say so. Two options do that, and the trap is that
+**neither constrains the other**:
+
+- `permitopen` limits what `-L` (and `DynamicForward`) may connect *out* to.
+- `permitlisten` limits what `-R` may bind *on the bastion*.
+
+A line naming only one of them leaves the other direction unrestricted — a
+client allowed to `-L` to the API port could also bind listeners on the
+bastion, and a gateway allowed to `-R` could also reach anything the bastion can
+see. `restrict` turns everything off, and the `port-forwarding` that follows it
+re-enables **both** directions, which is what makes the omission easy to miss.
+
+So set both on every key, pinning the direction that key does not use to
+something it cannot get, such as `127.0.0.1:1`:
+
+```text
+# the gateway: may publish the API port on the bastion, may forward nowhere
+restrict,port-forwarding,permitlisten="127.0.0.1:4002",permitlisten="localhost:4002",permitopen="127.0.0.1:1" ssh-ed25519 AAAA... ibgateway
+
+# a client: may reach the API port, may publish nothing
+restrict,port-forwarding,permitopen="127.0.0.1:4002",permitopen="localhost:4002",permitlisten="127.0.0.1:1" ssh-ed25519 AAAA... jupyter
+```
+
+Both spellings of the address are listed because the client chooses which one
+it asks for, and OpenSSH matches the request as written rather than resolving
+it first.
+
+`deploy/provision.sh` in the repository root writes exactly these lines. This
+was measured against a running bastion on 2026-08-27, after shipping it wrong
+in both directions, and is pinned by `tests/unit/provision.bats`.
 
 ## SSH bastion use cases
 

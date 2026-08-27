@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016  # backticks here are markdown, matched literally
 #
 # What this project is called, and that the generated README says it too.
 #
@@ -76,58 +77,86 @@ tree_grep() {
 	[ "$status" -eq 0 ]
 }
 
-@test "README.md is exactly what the release workflow generates" {
-	# The same five variables, substituted the same way, from the same sources
-	# as the "Update README" step of detect-releases.yml. envsubst is not in
-	# the bats image, and the template only ever uses the ${VAR} form.
-	#
-	# IBC is the exception. That step reads IBC_VERSION from Dockerfile.template,
-	# but detect-ibc-release.yml bumps the template without regenerating the
-	# README - so between an IBC bump and the next gateway release the README
-	# carries the older IBC, and it is right to: that is what the published
-	# images contain. Any of the three values in the tree is therefore accepted,
-	# which still pins every other byte. See docs/DECISIONS.md #2.
-	local latest stable latest_minor stable_minor ibc
+# The seven variables the "Update README" step of detect-releases.yml
+# substitutes, and where it reads each from. Kept in one place so the two tests
+# below and that step cannot drift apart.
+readme_vars() {
+	local latest stable
 	latest="$(grep 'ENV IB_GATEWAY_VERSION=' "${ROOT}/latest/Dockerfile" | head -1 | cut -d '=' -f2)"
 	stable="$(grep 'ENV IB_GATEWAY_VERSION=' "${ROOT}/stable/Dockerfile" | head -1 | cut -d '=' -f2)"
-	latest_minor="$(cut -d '.' -f1,2 <<<"$latest")"
-	stable_minor="$(cut -d '.' -f1,2 <<<"$stable")"
+	echo "LATEST_VERSION=${latest}"
+	echo "STABLE_VERSION=${stable}"
+	echo "LATEST_MINOR=$(cut -d '.' -f1,2 <<<"$latest")"
+	echo "STABLE_MINOR=$(cut -d '.' -f1,2 <<<"$stable")"
+	# Per channel, from the channel's own Dockerfile - not once from
+	# Dockerfile.template. detect-ibc-release.yml bumps the template alone, so
+	# the template says what the *next* release will ship while the two
+	# channels can legitimately hold different IBC versions; one number would
+	# be wrong for one of the rows. See docs/DECISIONS.md #2 and #26.
+	echo "LATEST_IBC=$(grep 'ENV IBC_VERSION' "${ROOT}/latest/Dockerfile" | head -1 | cut -d '=' -f2)"
+	echo "STABLE_IBC=$(grep 'ENV IBC_VERSION' "${ROOT}/stable/Dockerfile" | head -1 | cut -d '=' -f2)"
+	# The bastion has no IB version; its own Dockerfile declares one, and this
+	# is the expression publish.yml tags the published image with.
+	echo "BASTION_VERSION=$(sed -n 's/^ARG IMAGE_VERSION=//p' "${ROOT}/bastion/Dockerfile" | head -1)"
+}
 
-	local expected="${BATS_TEST_TMPDIR}/README.expected" matched='no'
-	for ibc in \
-		"$(grep 'ENV IBC_VERSION' "${ROOT}/Dockerfile.template" | cut -d '=' -f 2)" \
-		"$(grep 'ENV IBC_VERSION' "${ROOT}/latest/Dockerfile" | cut -d '=' -f 2)" \
-		"$(grep 'ENV IBC_VERSION' "${ROOT}/stable/Dockerfile" | cut -d '=' -f 2)"; do
-		sed -e "s|\${LATEST_VERSION}|${latest}|g" \
-			-e "s|\${STABLE_VERSION}|${stable}|g" \
-			-e "s|\${LATEST_MINOR}|${latest_minor}|g" \
-			-e "s|\${STABLE_MINOR}|${stable_minor}|g" \
-			-e "s|\${IBC_VERSION}|${ibc}|g" \
-			"${ROOT}/template_README.md" >"$expected"
-		if diff -q "$expected" "${ROOT}/README.md" >/dev/null; then
-			matched='yes'
-			break
-		fi
-	done
+@test "README.md is exactly what the release workflow generates" {
+	# Same variables, same sources, same substitution as that step. envsubst is
+	# not in the bats image, and the template only ever uses the ${VAR} form,
+	# so sed reproduces it exactly.
+	local expected="${BATS_TEST_TMPDIR}/README.expected" line name value
+	cp "${ROOT}/template_README.md" "$expected"
+	while IFS= read -r line; do
+		name="${line%%=*}"
+		value="${line#*=}"
+		[ -n "$value" ] || {
+			echo "no value found for \$${name}"
+			return 1
+		}
+		sed -i "s|\${${name}}|${value}|g" "$expected"
+	done < <(readme_vars)
 
-	[ "$matched" = 'yes' ] || {
-		echo "README.md is not envsubst(template_README.md) for any IBC version"
-		echo "present in the tree. Edit template_README.md, then regenerate - a"
-		echo "change written straight into README.md is lost at the next IB release."
+	diff -q "$expected" "${ROOT}/README.md" >/dev/null || {
+		echo "README.md is not envsubst(template_README.md) for the versions in"
+		echo "this tree. Edit template_README.md, then regenerate - a change"
+		echo "written straight into README.md is lost at the next IB release."
 		diff -u "$expected" "${ROOT}/README.md" || true
 		return 1
 	}
 }
 
-@test "README.md leaves none of the five placeholders unsubstituted" {
-	# Only those five are substituted. The README documents `${PWD}`,
-	# `${IB_APP}` and `${IB_GATEWAY_VERSION}` as literal text a user types, so
-	# a blanket search for `${...}` would fail on its own examples.
-	run grep -nE '\$\{(LATEST_VERSION|LATEST_MINOR|STABLE_VERSION|STABLE_MINOR|IBC_VERSION)\}' \
+@test "README.md leaves none of the substituted placeholders behind" {
+	# Only these are substituted. The README documents `${PWD}`, `${IB_APP}`,
+	# `${IBC_VERSION}` and `${IB_GATEWAY_VERSION}` as literal text naming a
+	# variable the reader sets, so a blanket search for `${...}` would fail on
+	# its own examples.
+	run grep -nE '\$\{(LATEST_VERSION|LATEST_MINOR|LATEST_IBC|STABLE_VERSION|STABLE_MINOR|STABLE_IBC|BASTION_VERSION)\}' \
 		"${ROOT}/README.md"
 	[ "$status" -ne 0 ] || {
 		echo "unsubstituted placeholders in the generated README:"
 		echo "$output"
+		return 1
+	}
+}
+
+@test "README.md reports each channel's own IBC version" {
+	# The defect this replaced: one ${IBC_VERSION} filled both rows, so the
+	# table claimed stable shipped whatever latest did.
+	local latest_ibc stable_ibc
+	latest_ibc="$(grep 'ENV IBC_VERSION' "${ROOT}/latest/Dockerfile" | head -1 | cut -d '=' -f2)"
+	stable_ibc="$(grep 'ENV IBC_VERSION' "${ROOT}/stable/Dockerfile" | head -1 | cut -d '=' -f2)"
+
+	run grep -F '| [ib-gateway][1] | `latest` | ' "${ROOT}/README.md"
+	[ "$status" -eq 0 ]
+	[[ $output == *"\`${latest_ibc}\`"* ]] || {
+		echo "the latest row does not name IBC ${latest_ibc}: ${output}"
+		return 1
+	}
+
+	run grep -F '| [ib-gateway][1] |`stable` | ' "${ROOT}/README.md"
+	[ "$status" -eq 0 ]
+	[[ $output == *"\`${stable_ibc}\`"* ]] || {
+		echo "the stable row does not name IBC ${stable_ibc}: ${output}"
 		return 1
 	}
 }

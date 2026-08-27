@@ -9,13 +9,12 @@ assignees: ''
 
 ## Before you submit this issue
 
-If this is not an issue but a request for help, please post it on the
-[issues](https://github.com/dennisdeh/ib-docker/issues)
-section. There is a search function that will help you find solutions to common
-problems.
+Questions are welcome as issues too — search the
+[existing ones](https://github.com/dennisdeh/ib-docker/issues) first, since
+most of the common problems have been answered there already.
 
-Please make sure that you are running `latest` or `stable` for either
-`ib-gateway` or `tws-rdesktop`. Please run one of these as required
+Please make sure you are on a current image before reporting a bug. Pull the
+one you are running:
 
 ```bash
 # ib-gateway
@@ -24,6 +23,8 @@ docker pull ghcr.io/dennisdeh/ib-gateway:stable
 # tws-rdesktop
 docker pull ghcr.io/dennisdeh/tws-rdesktop:latest
 docker pull ghcr.io/dennisdeh/tws-rdesktop:stable
+# the ssh bastion, which carries no IB version of its own
+docker pull ghcr.io/dennisdeh/bastion:latest
 ```
 
 Please make sure that you are using the `docker-compose.yml` file provided as
@@ -63,8 +64,9 @@ If applicable, add the container logs `docker logs <CONTAINER>` or
 
 Please complete the following information:
 
-- OS: [e.g. Windows]
-- Docker version: [e.g. chrome, safari]
+- OS: [e.g. Ubuntu 24.04, Windows 11]
+- Architecture: [`amd64` or `arm64` — `uname -m`]
+- Docker version: [`docker version`]
 - Image Tag (`docker image inspect ghcr.io/dennisdeh/ib-gateway:tag`): [e.g.
   latest, stable] **MANDATORY** ⚠️⚠️
 - Image Digest (`docker images --digests`): [e.g.

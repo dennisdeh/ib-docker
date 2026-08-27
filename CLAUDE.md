@@ -4,7 +4,7 @@
 what the code cannot — which command to trust, what "done" means, and which
 plausible-looking action is the wrong one.*
 
-*Last updated: 2026-08-27*
+*Last updated: 2026-08-28*
 
 ---
 
@@ -97,10 +97,12 @@ Everything below is untracked or gitignored and must be supplied out-of-band:
 | `config/` | X/xrdp runtime state | created by the container |
 | `key.pem`, `cert.pem`, `keylock` | TLS material | supplied out-of-band |
 
-The bastion validates a hash of the provisioned `data/etc` at startup
-(`data/etc/ssh/bastion_provisioned_hash.sum`). Editing those files by hand
-without re-provisioning makes the container refuse to start — that is the
-feature, not a bug.
+The bastion validates a hash of the provisioned `data/etc` at startup.
+`check_provision()` runs `sha256sum -c` over
+`data/etc/ssh/bastion_provisioned_hash`, the list of per-file digests;
+`bastion_provisioned_hash.sum` beside it is a digest *of that list*, not the
+file being checked. Editing any covered file by hand without re-provisioning
+makes the container refuse to start — that is the feature, not a bug.
 
 > Real credential files (`.env`, `.env.bak`, …) are covered by `.gitignore` and
 > by the `no-real-env-files` pre-commit hook, which fails even on a `git add -f`
@@ -127,10 +129,20 @@ feature, not a bug.
   (`grep 'ENV IB_GATEWAY_VERSION=' stable/Dockerfile`). Doing only one leaves
   the other channel running last month's scripts.
 - **`README.md` is generated from `template_README.md`** by
-  `.github/workflows/detect-releases.yml` (`envsubst` over `$LATEST_VERSION`,
-  `$STABLE_VERSION`, `$IBC_VERSION`, …). **Edit `template_README.md`.** A change
-  written into `README.md` survives until the next IB Gateway release, then
-  vanishes without a trace.
+  `.github/workflows/detect-releases.yml`, an `envsubst` over exactly seven
+  variables: `$LATEST_VERSION`, `$LATEST_MINOR`, `$LATEST_IBC`,
+  `$STABLE_VERSION`, `$STABLE_MINOR`, `$STABLE_IBC` and `$BASTION_VERSION`.
+  **Edit `template_README.md`.** A change written into `README.md` survives
+  until the next IB Gateway release, then vanishes without a trace.
+  `tests/unit/naming.bats` reproduces the substitution and diffs the result, so
+  an edit made in the wrong file fails in the same commit. Anything else of the
+  `${...}` form is left literal on purpose — the README documents `${PWD}` and
+  `${IB_GATEWAY_VERSION}` as text the reader types.
+- **The IBC and bastion versions in that table are read per image**, from
+  `latest/Dockerfile`, `stable/Dockerfile` and `bastion/Dockerfile` — not once
+  from `Dockerfile.template`. One number across all rows was wrong for `stable`
+  the moment the channels diverged, which is the normal state described in the
+  next rule. See `docs/DECISIONS.md` #26.
 - **The IBC version can legitimately differ between the templates and the
   channel Dockerfiles.** `detect-ibc-release.yml` bumps `IBC_VERSION` in the two
   templates only and deliberately does *not* run `update.sh`; the next gateway
@@ -340,7 +352,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 87 tests as of 2026-08-27.
+  container, no network, no credentials. 90 tests as of 2026-08-28.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,
@@ -354,7 +366,7 @@ tests/run.sh all
   `bastion_hash.bats` provisions a throwaway `data/`, tampers with
   `sshd_config.d` and asserts the bastion refuses to start; set `BASTION_IMAGE`
   to test an image other than `ghcr.io/dennisdeh/bastion:latest`. 8 tests as of
-  2026-08-27, and **not run in CI** — see `DECISIONS.md` #11.
+  2026-08-28, and **not run in CI** — see `DECISIONS.md` #11.
 - Nothing in the suite touches `inv_gateway`/`inv_bastion`.
 
 ### 5. Links in the documentation
@@ -363,14 +375,21 @@ tests/run.sh all
 python3 tests/links.py     # needs the network; not part of tests/run.sh
 ```
 
-Resolves every anchor offline and fetches every URL in the tracked markdown —
-including the ones **inside fenced code blocks**, which is where a `git clone`
-of a repository that does not exist had been hiding. It skips URLs holding a
-`${...}` placeholder (templates the reader substitutes) and `starchart.cc`,
-which answers 400 to any automated request, `torvalds/linux` included. Run it
-after anything that renames a repository or moves a heading: a rename leaves
-links that still resolve to a **wrong** page rather than a 404, so nothing else
-catches them.
+Resolves every anchor offline and fetches every URL in **every tracked file**,
+in three passes: markdown links, the URLs **inside fenced code blocks** — where
+a `git clone` of a repository that does not exist had been hiding — and, since
+2026-08-28, the URLs in every other tracked text file, which is to say the ones
+in code comments. A comment citing an issue or a manual page is documentation
+too, and nothing else reads it: the rename rewrote an upstream issue link in
+`run_tws.sh` into this project's own tracker, where it 404s, and only a
+markdown checker could miss that. It skips URLs holding a `${...}` placeholder
+(templates the reader substitutes) and `starchart.cc`, which answers 400 to any
+automated request, `torvalds/linux` included; a trailing `$` is trimmed, since
+in source it is a regex anchor rather than part of the URL.
+
+Run it after anything that renames a repository or moves a heading: a rename
+leaves links that still resolve to a **wrong** page rather than a 404, so
+nothing else catches them.
 
 Two traps, both of which cost a debugging round already:
 
@@ -555,9 +574,12 @@ In order of value:
    reader that this file is decoration.
 
 Several rules above are candidates for promotion to checks — a test that
-`image-files/` and both channel directories agree; a check that `README.md` is
-byte-identical to `envsubst` over `template_README.md`; a `.gitignore` test that
-no `*.env*` variant is stageable. Write the check, then delete the rule.
+`image-files/` and both channel directories agree; a `.gitignore` test that no
+`*.env*` variant is stageable. Write the check, then delete the rule.
+
+*The README check on that list was written on 2026-08-27 and made exact on
+2026-08-28 (`tests/unit/naming.bats`), so it is struck off rather than left
+here as a standing wish.*
 
 **Prune as well as add.** Delete a rule when its check exists, when the thing it
 guards is gone, or when it has never once been the thing that went wrong.

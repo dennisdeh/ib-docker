@@ -2,13 +2,15 @@ name: Detect IB Gateway Releases
 
 # Daily: ask Interactive Brokers what the current build is for each channel,
 # and when it has moved, attach the installers to a release here, regenerate
-# the channel with update.sh, open a PR - and publish both images for that
-# channel to ghcr.io.
+# the channel with update.sh, open a PR - and publish to ghcr.io by calling
+# publish.yml, which pushes all three images: ib-gateway and tws-rdesktop for
+# that channel, plus bastion.
 #
-# The version this reads drives BOTH images: `update.sh` renders
+# The version this reads drives both IB images: `update.sh` renders
 # `Dockerfile.tws` from the same `$VERSION`, and the TWS image copies its IB
 # install out of the gateway image, so IB Gateway and TWS never carry separate
-# version numbers. One detection is therefore all either image needs.
+# version numbers. One detection is therefore all either image needs. The
+# bastion carries no IB version at all and is tagged from its own Dockerfile.
 #
 # The images are published from the bot's own commit, before anyone merges the
 # PR. That commit is master plus the deterministic output of `update.sh`, which
@@ -132,12 +134,21 @@ jobs:
             echo "invalid channel: ${CHANNEL}"
             exit 1
           fi
-          # IBC
-          export IBC_VERSION="$(grep 'ENV IBC_VERSION' Dockerfile.template|cut -d '=' -f 2)"
+          # IBC, per channel. Read from the two channel Dockerfiles rather
+          # than once from Dockerfile.template: detect-ibc-release.yml bumps
+          # the template alone, so the template holds what the *next* release
+          # will ship rather than what either channel contains now, and the two
+          # channels may legitimately differ - see docs/DECISIONS.md #2. A
+          # single number in the table is therefore wrong for one of the rows.
+          export LATEST_IBC=$(grep 'ENV IBC_VERSION' $_latest_dockerfile | head -1 | cut -d '=' -f2)
+          export STABLE_IBC=$(grep 'ENV IBC_VERSION' $_stable_dockerfile | head -1 | cut -d '=' -f2)
+          # The bastion carries no IB version; its own Dockerfile declares one.
+          # Same expression publish.yml tags the published image with.
+          export BASTION_VERSION=$(sed -n 's/^ARG IMAGE_VERSION=//p' bastion/Dockerfile | head -1)
           # show in log
-          echo "$LATEST_VERSION,$LATEST_MINOR,$STABLE_VERSION,$STABLE_MINOR,$IBC_VERSION"
+          echo "$LATEST_VERSION,$LATEST_MINOR,$LATEST_IBC,$STABLE_VERSION,$STABLE_MINOR,$STABLE_IBC,$BASTION_VERSION"
           # replace variables
-          envsubst '$LATEST_VERSION,$LATEST_MINOR,$STABLE_VERSION,$STABLE_MINOR,$IBC_VERSION' < template_README.md > README.md
+          envsubst '$LATEST_VERSION,$LATEST_MINOR,$LATEST_IBC,$STABLE_VERSION,$STABLE_MINOR,$STABLE_IBC,$BASTION_VERSION' < template_README.md > README.md
 
       - name: Create PR
         id: pr

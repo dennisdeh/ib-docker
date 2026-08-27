@@ -204,9 +204,12 @@ ibc_pins() {
 }
 
 # Both Dockerfiles must prove a JVM survived into the runtime stage. Where the
-# installer leaves it varies by version and architecture - latest@10.48.1e keeps
-# one inside the install directory, stable@10.45.1j only under /usr/local - so a
-# missing copy breaks one channel and not the other. See DECISIONS.md #18.
+# installer leaves it varies by version and architecture - measured 2026-08-25,
+# latest@10.48.1e kept one inside the install directory while stable@10.45.1j
+# had it only under /usr/local - so a missing copy breaks one channel and not
+# the other. `latest` has moved on since; the point is that the two channels
+# cannot be assumed to agree, not that those two versions are current. See
+# DECISIONS.md #18.
 @test "build: the runtime stage proves it has a JVM" {
 	local channel f
 	for channel in $CHANNELS; do

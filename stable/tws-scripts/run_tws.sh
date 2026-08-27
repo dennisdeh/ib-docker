@@ -29,8 +29,10 @@ disable_agents() {
 }
 
 disable_compositing() {
-	# disable compositing
-	# https://github.com/dennisdeh/ib-docker/issues/55
+	# xfce compositing costs a lot of TWS's responsiveness over RDP; see
+	# "Performance considerations for TWS" in the README. This cited an
+	# upstream issue by URL until 2026-08-28, when a repository rename had
+	# rewritten it into a 404 in this project's own issue tracker.
 	echo ".> Disabling xfce compositing"
 	xfconf-query --channel=xfwm4 --property=/general/use_compositing \
 		--type=bool --set=false --create

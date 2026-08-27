@@ -1,9 +1,11 @@
 # RUNBOOK
 
 How to run, provision and recover the local stack. User-facing configuration is
-documented in `template_README.md`; this file is about *this* deployment.
+documented in `template_README.md`, the ssh bastion in `bastion/README.md`, and
+how to change the image in `CONTRIBUTING.md`; this file is about *this*
+deployment.
 
-*Last updated: 2026-08-27*
+*Last updated: 2026-08-28*
 
 ## What runs, and from where
 
@@ -49,6 +51,11 @@ Other services on this machine (`inv_visualisation`, `inv_db`, `inv_redis`,
 
 The published port is always the **socat** port, never the API port IB Gateway
 itself listens on. See *Key conventions* in `CLAUDE.md`.
+
+The host-side numbers come from `.env`, not from `docker-compose.yml`:
+`PORT_HOST_TWS_LIVE`, `PORT_HOST_TWS_PAPER`, `PORT_HOST_VNC_SERVER` and
+`SSH_LISTEN_PORT`. `.env-dist` records the defaults (`4001`/`4002`/`5900`/
+`22222`), which is why the table above does not match a fresh checkout.
 
 ## Start / stop
 
@@ -153,12 +160,17 @@ equivalent, and what the existing deployment was built with.
 at `/data` (see the header comment in that script for the exact `docker run`).
 The container hashes the provisioned `/etc/passwd`, `sshd_config`, the host keys
 and — since 2026-08-27 — everything in `sshd_config.d/` plus a listing of that
-directory, into `data/etc/ssh/bastion_provisioned_hash.sum`, and re-validates on
-every start: editing any of it by hand makes the container refuse to start until
-it is re-provisioned. That is intentional. The listing is hashed as well as the
-files because a per-file hash cannot notice a drop-in being *added* or
-*removed* — every recorded line still checks out — and `sshd_config` includes
-whatever is in there.
+directory, into `data/etc/ssh/bastion_provisioned_hash`, and re-validates that
+file with `sha256sum -c` on every start: editing any of it by hand makes the
+container refuse to start until it is re-provisioned. That is intentional.
+
+Two files, and only one of them is the check. `bastion_provisioned_hash` is the
+list of per-file digests that `check_provision()` in `entrypoint.sh` verifies;
+`bastion_provisioned_hash.sum` is a digest *of that list*, written beside it so
+the list itself can be seen to be intact. The listing of `sshd_config.d/` is
+hashed as well as the files in it because a per-file hash cannot notice a
+drop-in being *added* or *removed* — every recorded line still checks out — and
+`sshd_config` includes whatever is in there.
 
 ## Recovery
 

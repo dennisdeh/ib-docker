@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Check every link in the tracked markdown files.
+"""Check every link in the tracked files - markdown and source alike.
 
 Run it by hand - it needs the network, so it is not part of `tests/run.sh`:
 
     python3 tests/links.py
 
-Two kinds:
+Three kinds:
   * anchors (#foo)  - resolved against the headings of the same file, using
                       GitHub's slug rules, so a rename that orphans a
                       cross-reference is caught offline.
-  * URLs            - fetched, and reported by status code.
+  * URLs in markdown - fetched, and reported by status code.
+  * URLs in comments - the same, for every other tracked text file. A comment
+                      citing an issue or a manual page is documentation too,
+                      and nothing else ever reads it: the 2026-08-27 repository
+                      rename rewrote an upstream issue link in
+                      image-files/tws-scripts/run_tws.sh into this project's own
+                      tracker, where it 404s. Markdown-only checking could not
+                      see it, and it survived until 2026-08-28.
 
 Read-only. Nothing here changes a file.
 """
@@ -20,10 +27,18 @@ import sys
 import urllib.error
 import urllib.request
 
-FILES = [
-    f for f in subprocess.check_output(["git", "ls-files", "*.md"], text=True).split()
-    if not f.startswith(("latest/", "stable/"))
-]
+def tracked(*patterns):
+    out = subprocess.check_output(["git", "ls-files", *patterns], text=True).split()
+    # latest/ and stable/ are generated copies; a finding there is a duplicate
+    # of one in image-files/ or in a template, and is fixed at the source.
+    return [f for f in out if not f.startswith(("latest/", "stable/"))]
+
+
+FILES = tracked("*.md")
+
+# Everything else that is text. Binary files are skipped by the read below
+# rather than by extension, so a new asset type needs no change here.
+SOURCES = [f for f in tracked() if f not in set(FILES)]
 
 INLINE = re.compile(r"\[[^\]]*\]\(\s*<?([^)\s>]+)>?\s*(?:\"[^\"]*\")?\)")
 REFDEF = re.compile(r"^\[[^\]]+\]:\s*<?(\S+)>?", re.M)
@@ -56,6 +71,26 @@ def links_of(path):
     for block in FENCE.findall(raw):
         fenced |= {u.rstrip(".,;:)\"'") for u in BARE.findall(block)}
     return raw, out, fenced - out
+
+
+# A URL written in shell, YAML or a regex carries its context with it. Two
+# forms have to be trimmed before fetching, and neither is a defect:
+#   * a trailing `$` - a regex anchor, as in a grep pattern asserting a label's
+#     exact value;
+#   * trailing punctuation that belongs to the surrounding sentence.
+# A URL holding `${...}` is a template and is dropped by skip(), same as in the
+# markdown.
+def urls_in_source(path):
+    try:
+        raw = open(path, encoding="utf-8").read()
+    except (UnicodeDecodeError, OSError):
+        return set()                             # binary, or unreadable
+    out = set()
+    for u in BARE.findall(raw):
+        u = u.rstrip("$").rstrip(".,;:)\"'")
+        if u.startswith(("http://", "https://")) and len(u) > len("https://"):
+            out.add(u)
+    return out
 
 
 def check_url(url):
@@ -113,8 +148,21 @@ for path in FILES:
                     ["test", "-e", target], capture_output=True).returncode == 0:
                 anchor_problems.append((path, link + "   (missing file)"))
 
+source_urls = {}
+for path in SOURCES:
+    for u in urls_in_source(path):
+        if skip(u):
+            skipped += 1
+            continue
+        # Already covered as a markdown link; check it once.
+        if u in urls or u in fenced_urls:
+            continue
+        source_urls.setdefault(u, []).append(path)
+
 print(f"{len(FILES)} markdown files, {len(urls)} linked URLs, "
-      f"{len(fenced_urls)} more inside code blocks, {skipped} skipped\n")
+      f"{len(fenced_urls)} more inside code blocks, {skipped} skipped")
+print(f"{len(SOURCES)} source files, {len(source_urls)} URLs in comments "
+      f"and strings\n")
 
 if anchor_problems:
     print("BROKEN ANCHORS / RELATIVE LINKS")
@@ -131,13 +179,18 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             continue
         bad.append((code, err, url, urls[url]))
 
-for url, code, err in __import__("concurrent.futures", fromlist=["x"]).ThreadPoolExecutor(
-        max_workers=8).map(check_url, fenced_urls):
-    if code != 200:
-        bad.append((code, err, url, fenced_urls[url]))
+with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+    for url, code, err in pool.map(check_url, fenced_urls):
+        if code != 200:
+            bad.append((code, err, url, fenced_urls[url]))
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+    for url, code, err in pool.map(check_url, source_urls):
+        if code != 200:
+            bad.append((code, err, url, source_urls[url]))
 
 if not bad:
-    print("URLs: all 200 (links and code blocks)")
+    print("URLs: all 200 (markdown links, code blocks and source files)")
 else:
     print("URLs NOT 200")
     for code, err, url, where in sorted(bad, key=lambda x: -x[0]):

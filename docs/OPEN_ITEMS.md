@@ -3,9 +3,35 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-27 — items 1-16 from the QA / adversarial QA sweep of
-2026-08-25; item 17 from wiring release detection to publication on 2026-08-26;
-items 19-20 found on 2026-08-27 while writing `deploy/provision.sh`.*
+*Last updated: 2026-08-28 — items 1-16 from the QA / adversarial QA sweep of
+2026-08-25; item 22 from wiring release detection to publication on 2026-08-26;
+items 19-21 from 2026-08-27, while writing `deploy/provision.sh` and bumping
+IBC. Reorganised on 2026-08-28: the summary below was added, and three item
+numbers that had been used twice were made unique.*
+
+**Numbers are identifiers, not an ordering.** They are cited from `CLAUDE.md`,
+from three workflows and from the test suite, so a fixed item keeps its number
+where it is rather than being renumbered or deleted. Most of what follows is
+therefore a record of something already repaired; the table below is what is
+actually outstanding.
+
+## Still open, as of 2026-08-28
+
+| # | item | where |
+|---|---|---|
+| 9 | the container user can `sudo` to root without a password | Low |
+| 10 | `x11vnc` takes its password on the command line | Low |
+| 11 | the TWS image's default RDP password is `abc` | Low |
+| 12 | `run_ssh.sh` re-parses operator-supplied env values through a shell | Low |
+| 13 | Dependabot watches the *generated* channel directories, not the sources | Low |
+| 14 | `PWD` is defined inside `.env` | Low |
+| 15 | `PORT_HOST_SSH_BASTION` in `.env` is referenced by nothing | Low |
+| 16 | a local `docker compose build --pull tws` still needs a manual `docker tag` — CI is fixed | Medium |
+| 23 | `.pre-commit-config.yaml` revs are pinned to 2024 and nothing updates them | Low |
+| 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium |
+
+Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
+record of what changed and how it was verified.
 
 Verified clean in the same sweep, so nobody re-checks: **no secret has ever been
 committed** on any branch (`.env`, `.env.bak`, `*.pem`, `ssh/`, `data/`, `keylock`
@@ -325,7 +351,10 @@ redundant; its PR can be closed. `detect-releases.yml` will not reopen one,
 because it keys off the existence of the `ibgateway-stable@10.45.1j` release,
 which already exists.
 
-### 19. `apt-get` fails on the `linux/arm64` leg when Ubuntu is mid-publication — **MITIGATED**
+### 24. `apt-get` fails on the `linux/arm64` leg when Ubuntu is mid-publication — **MITIGATED**
+
+*Numbered 19 until 2026-08-28; that number belongs to the bastion publishing
+item in the Low table.*
 
 *Diagnosed 2026-08-25, from a local reproduction and the CI log of run
 `32901651857`, which agree exactly — same package, same mirror node.*
@@ -381,7 +410,10 @@ hold a permission its caller withheld. Two limits remain, both by construction:
 The local build is untouched — `docker compose build --pull tws` on this machine
 still needs the `docker tag` workaround above.
 
-### 17. Detecting a new IB Gateway version published nothing — **FIXED**
+### 22. Detecting a new IB Gateway version published nothing — **FIXED**
+
+*Numbered 17 until 2026-08-28; that number was already taken by the `arm64`
+JRE bug above, which `tests/unit/dockerfile.bats` cites.*
 
 *Found and fixed 2026-08-26, on branch `worktree-auto-publish-images`, while
 wiring detection to publication as asked.*
@@ -456,6 +488,6 @@ which is precisely the shape of this bug. Shown red against the merged state.
 | 13 | Dependabot watches `/stable` and `/latest` only | Those are *generated*; a base-image bump there is overwritten by the next `update.sh`. The real sources (`Dockerfile.template`, `Dockerfile.tws.template`) and `/bastion` are unwatched, as is the floating tag `lscr.io/linuxserver/rdesktop:ubuntu-xfce`. |
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
 | 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere | The bastion actually publishes `SSH_LISTEN_PORT=22222` on **0.0.0.0** — every other port here is pinned to `127.0.0.1`. Reachability is the point of a bastion, but a firewall rule written for 2222 protects nothing. |
-| 18 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
+| 23 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them (numbered 18 until 2026-08-28, which the `arm` release-asset item already used) | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
 | 19 | The bastion image is published nowhere — **FIXED 2026-08-27** | It was built from `bastion/` and tagged `dennisdeh/bastion:local-resolute`, so `deploy/provision.sh` needed a checkout to build one of the three images. `publish.yml` now pushes `ghcr.io/dennisdeh/bastion`, tagged with the `ARG IMAGE_VERSION` the bastion's own Dockerfile declares, and `provision.sh` pulls it and only falls back to building. `build.yml` builds it too, so a break fails the PR check rather than a release. |
 | 20 | `sshd_config.d/*.conf` is included but not covered by the provisioning hash — **FIXED 2026-08-27** | `bastion/sshd_config` opens with `Include /etc/ssh/sshd_config.d/*.conf`, and `set_checksum()` hashed `sshd_config` and the host keys but nothing from that directory, so a drop-in could set `PermitRootLogin` or widen `AllowTcpForwarding` while `check_provision()` still reported a valid checksum. Confirmed against the unfixed image: adding, editing **and** removing a drop-in all started normally. `set_checksum()` now hashes those files *and* a recorded listing of the directory — the files alone cannot catch an addition or a removal, since every recorded line still checks out — and `check_sshd_config_d()` in `entrypoint.sh` compares the listing before sshd starts. Pinned by `tests/container/bastion_hash.bats`. **Upgrading the image requires re-provisioning `data/`**: the container refuses to start on data provisioned before this, rather than skipping the check. |

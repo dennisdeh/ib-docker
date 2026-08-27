@@ -6,7 +6,7 @@
 #
 # entrypoint script for sshd bastion docker image. it starts sshd by default,
 # takes '-o' sshd option parameters. or run a command in container, ex:
-# docker run -it dennisdeh/bastion bash
+# docker run -it ghcr.io/dennisdeh/bastion:latest bash
 #
 ###############################################################################
 

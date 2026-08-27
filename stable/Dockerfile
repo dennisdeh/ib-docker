@@ -18,8 +18,10 @@ ARG IBC_FILE="IBCLinux-${IBC_VERSION}.zip"
 ARG IBC_REPO="https://github.com/IbcAlpha/IBC"
 ARG IBC_URL="${IBC_REPO}/releases/download/${IBC_VERSION}/${IBC_FILE}"
 # IBC publishes no checksum file, so the digest is pinned here and MUST be
-# updated with IBC_VERSION. .github/workflows/detect-ibc-release.yml recomputes
-# it when it opens a version-bump PR. Measured 2026-08-25 for 3.24.1.
+# updated with IBC_VERSION - it is the digest of the IBCLinux-<IBC_VERSION>.zip
+# named above, and of no other version. .github/workflows/detect-ibc-release.yml
+# recomputes it when it opens a version-bump PR, and verifies it on every daily
+# run; tests/unit/dockerfile.bats pins the version-to-digest pairing offline.
 ARG IBC_SHA256=d99ee28cc3539e3843fb00d28dc484c255006b0063d38f0808ac3ef07dd88bb8
 
 WORKDIR /tmp/setup

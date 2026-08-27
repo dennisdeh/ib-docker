@@ -11,7 +11,10 @@
 #  --hostname=bastion \
 #  -v $PWD/data:/data \
 #  --name bastion_provision \
-#  dennisdeh/bastion:202208 /provision.sh
+#  ghcr.io/dennisdeh/bastion:latest /provision.sh
+#
+# deploy/provision.sh in the repository root drives this for you, and
+# bastion/README.md documents doing it by hand.
 ###############################################################################
 
 set -e
