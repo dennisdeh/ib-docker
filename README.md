@@ -1,6 +1,6 @@
 # Interactive Brokers Gateway Docker
 
-[![Build](https://github.com/dennisdeh/ib-docker/actions/workflows/on-push-n-pr.yml/badge.svg?branch=master)](https://github.com/dennisdeh/ib-docker/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![GitHub Discussions](https://img.shields.io/github/discussions/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/discussions) [![GitHub Repo stars](https://img.shields.io/github/stars/dennisdeh/ib-docker)](#repo-stats) [![GitHub forks](https://img.shields.io/github/forks/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/network/members)
+[![Build](https://github.com/dennisdeh/ib-docker/actions/workflows/on-push-n-pr.yml/badge.svg?branch=master)](https://github.com/dennisdeh/ib-docker/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![GitHub Issues](https://img.shields.io/github/issues/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/issues) [![GitHub Repo stars](https://img.shields.io/github/stars/dennisdeh/ib-docker)](#repo-stats) [![GitHub forks](https://img.shields.io/github/forks/dennisdeh/ib-docker)](https://github.com/dennisdeh/ib-docker/network/members)
 
 <img src="https://github.com/dennisdeh/ib-docker/blob/master/logo.png" height="300" class="center" alt="IB Gateway Docker"/>
 
@@ -301,9 +301,10 @@ Naming a service on the command line enables its profile for that command, so
 `docker compose build ib-gateway` works whatever `IB_APP` is set to. A bare
 `docker compose build` only builds the selected service.
 
-Looking for help? Please keep reading below, or go to
-[discussion](https://github.com/dennisdeh/ib-docker/discussions) section for common
-problems and solutions. If you have problems please go through the [troubleshooting guide](https://github.com/dennisdeh/ib-docker/discussions/245)
+Looking for help? Please keep reading below — *Troubleshooting socat and
+ssh* and *Security Considerations* cover the usual problems — and open an
+[issue](https://github.com/dennisdeh/ib-docker/issues) if that does not settle
+it.
 
 ## Configuration
 
@@ -561,13 +562,13 @@ Gateway port there.
 An example setup would be to run
 [ib-docker](https://github.com/dennisdeh/ib-docker) with a
 sidecar [ssh bastion](https://github.com/dennisdeh/docker-bastion) and a
-[jupyter-quant](https://github.com/dennisdeh/jupyter-quant), which provides a
+[jupyter-quant](https://github.com/quantbelt/jupyter-quant), which provides a
 fully working algorithmic trading environment. In simple terms ib gateway opens
 a **remote** port on ssh bastion and listen to connections on it. While
-[jupyter-quant](https://github.com/dennisdeh/jupyter-quant) will open a **local**
+[jupyter-quant](https://github.com/quantbelt/jupyter-quant) will open a **local**
 port that is tunneled into bastion on the same port opened by
 ib-docker. This combination of tunnels will expose IB API port into
-[jupyter-quant](https://github.com/dennisdeh/jupyter-quant) making it available
+[jupyter-quant](https://github.com/quantbelt/jupyter-quant) making it available
 for use with [ib_insync](https://github.com/erdewit/ib_insync). The only port
 available to the outside world is the
 [ssh bastion](https://github.com/dennisdeh/docker-bastion) port, which has hardened
@@ -680,15 +681,18 @@ secrets:
 
 ```
 
-In "discussion" section you will find full examples for [ib-gateway](https://github.com/dennisdeh/ib-docker/discussions/103) and [tws-rdesktop](https://github.com/dennisdeh/ib-docker/discussions/105)
+The repository's own [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml)
+is a full working example of both: it carries an `ib-gateway` service, a `tws`
+service and the bastion in one file.
 
 ### RDP
 
 [tws-rdesktop][2] will create a new TLS certificate every time the container
-starts. You can create your own certificate following this
-[instructions](https://github.com/dennisdeh/ib-docker/discussions/104).
-Once this steps are put in place the same TLS certificate will be used every
-time, which will allow you to trust it in your RDP client.
+starts, so your RDP client cannot trust it. Supply your own instead: mount
+`key.pem` and `cert.pem` at `/etc/xrdp/`, plus an empty `keylock` file at
+`/keylock` to stop the container generating one. `deploy/provision.sh` does
+this for you — it writes a self-signed pair into `tls/` and mounts all three
+— see [Deploying](#deploying).
 
 ## Troubleshooting socat and ssh
 
@@ -737,7 +741,7 @@ channels are on such a version, so both are published for `linux/amd64` and
 ## IB Gateway installation files
 
 Note that the
-[Dockerfile](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile)
+[Dockerfile.template](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile.template)
 **does not download IB Gateway installer files from IB homepage but from the
 [github-releases](https://github.com/dennisdeh/ib-docker/releases) of this
 project**.
@@ -753,9 +757,9 @@ downloaded from IB homepage and renamed to reflect the version.
 
 IF you feel adventurous and you want to download Gateway installer from IB
 homepage directly, or use your local installation file, change this line
-on [Dockerfile](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile)
+on [Dockerfile.template](https://github.com/dennisdeh/ib-docker/blob/master/Dockerfile.template)
 `RUN curl -sSL
-https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
+https://github.com/dennisdeh/ib-docker/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
 --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh` to download
 (or copy) the file from the source you prefer.
 
@@ -774,9 +778,9 @@ https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway
    replace this lines:
 
    ```docker
-   RUN curl -sSL https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh \
+   RUN curl -sSL https://github.com/dennisdeh/ib-docker/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh \
        --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh
-   RUN curl -sSL https://github.com/dennisdeh/ib-docker/raw/gh-pages/ibgateway-releases/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256 \
+   RUN curl -sSL https://github.com/dennisdeh/ib-docker/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}/ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256 \
        --output ibgateway-${IB_GATEWAY_VERSION}-standalone-linux-x64.sh.sha256
    ```
 

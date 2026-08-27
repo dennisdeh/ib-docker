@@ -216,8 +216,19 @@ feature, not a bug.
   bots and are **excluded from the CI build trigger** in
   `.github/workflows/on-push-n-pr.yml`. Do not name a human branch that way — it
   will silently skip CI.
-- Do not delete remote `update-*`/`IBC-update*` branches as cleanup: the
-  detection workflows test for their existence to avoid opening duplicate PRs.
+- **The two detection workflows dedupe differently, and only one of them looks
+  at branches** *(re-read from the workflows 2026-08-27; the old blanket rule
+  here said both did, which was wrong)*:
+  - `detect-releases.yml` checks whether the **GitHub release** for that
+    version exists — `gh release list | grep "<channel>@<version>"`. Branches
+    are irrelevant to it, so an `update-*-to-*` branch may be deleted freely.
+    The flip side is that once that release exists the branch is **never
+    regenerated**, so a superseded one is dead weight and should go.
+  - `detect-ibc-release.yml` checks for the **branch** and for an open PR. A
+    live `IBC-update*` branch must therefore stay until its PR is merged or
+    closed — but a merged one is free to delete, and deleting a stale one is
+    the way to make the workflow reopen it correctly. Leaving one in place is
+    what shipped IBC `3.24.2` with `3.24.1`'s digest; see `OPEN_ITEMS.md` #21.
 
 ## Testing
 
@@ -345,6 +356,21 @@ tests/run.sh all
   to test an image other than `ghcr.io/dennisdeh/bastion:latest`. 8 tests as of
   2026-08-27, and **not run in CI** — see `DECISIONS.md` #11.
 - Nothing in the suite touches `inv_gateway`/`inv_bastion`.
+
+### 5. Links in the documentation
+
+```bash
+python3 tests/links.py     # needs the network; not part of tests/run.sh
+```
+
+Resolves every anchor offline and fetches every URL in the tracked markdown —
+including the ones **inside fenced code blocks**, which is where a `git clone`
+of a repository that does not exist had been hiding. It skips URLs holding a
+`${...}` placeholder (templates the reader substitutes) and `starchart.cc`,
+which answers 400 to any automated request, `torvalds/linux` included. Run it
+after anything that renames a repository or moves a heading: a rename leaves
+links that still resolve to a **wrong** page rather than a 404, so nothing else
+catches them.
 
 Two traps, both of which cost a debugging round already:
 

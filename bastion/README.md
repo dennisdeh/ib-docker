@@ -26,8 +26,8 @@ steps below are the manual equivalent.
 
 Follow the steps below to have a running SSH bastion:
 
-- Create a [docker-compose.yml](https://github.com/dennisdeh/docker-bastion/blob/master/docker-compose.yml-dist) file. See [example](#run-the-container) below
-- Create an [.env](https://github.com/dennisdeh/docker-bastion/blob/master/.env-dist) file. See available [options](#environment-variables).
+- Create a [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/bastion/docker-compose.yml) file. See [example](#run-the-container) below
+- Create an [.env](https://github.com/dennisdeh/ib-docker/blob/master/bastion/.env-dist) file. See available [options](#environment-variables).
 - Copy `authorized_keys` file in `data` folder. We will create two users and asume they already have authorized keys in `/home/user_name/.ssh/autorized_keys`
 
 ```bash
@@ -60,10 +60,10 @@ This is telling ssh to create an ssh connetion to the server specified with para
 We will clone the git repository to use it as a template and set our preferences.
 
 ```bash
-git clone https://github.com/dennisdeh/docker-bastion.git
+git clone https://github.com/dennisdeh/ib-docker.git
+cd ib-docker/bastion
 cp .env-dist .env
 nano .env # edit env variables
-cp docker-compose.yml-dist docker-compose.yml
 nano docker-compose.yml # edit docker compose file
 docker compose config # verify compose file
 # set authorized keys, asuming bastion user
@@ -147,7 +147,7 @@ The following variables are available in the .env file
 
 | Variable | default | Description |
 | --- | --- | --- |
-| APT_PROXY | blank | Defines an optional APT_PROXY to speed up image build. format -> <http://aptproxy:3142>. You can try [apt-cacher-ng](https://github.com/dennisdeh/apt-cacher-ng) |
+| APT_PROXY | blank | Defines an optional APT_PROXY to speed up image build. format -> `http://aptproxy:3142`. You can try [apt-cacher-ng](https://github.com/gnzsnz/apt-cacher-ng) |
 | SSH_LISTEN_PORT | 22222 | host external published port |
 | USERS | bastion | Coma separated list of users, ex USERS=bastion,devops. Provisioning script will create users defined in this variable |
 | USER_SHELL | /usr/sbin/nologin | mandatory, required to set user shell |
@@ -181,7 +181,7 @@ docker compose build
 
 If defined `APT_PROXY` will be used during build time to speed up the build.
 
-You can find ready-to-use bastion images in [docker hub](https://hub.docker.com/r/dennisdeh/bastion) and [github container registry](https://github.com/dennisdeh/docker-bastion/pkgs/container/bastion). The docker compose file provided as an example will pull the image from docker hub.
+The image is published to the [github container registry](https://github.com/dennisdeh/ib-docker/pkgs/container/bastion) as `ghcr.io/dennisdeh/bastion`, for `linux/amd64` and `linux/arm64`. It is not on Docker Hub.
 
 ## Provision
 

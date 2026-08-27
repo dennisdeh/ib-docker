@@ -10,7 +10,7 @@ assignees: ''
 ## Before you submit this issue
 
 If this is not an issue but a request for help, please post it on the
-[discussions](https://github.com/dennisdeh/ib-docker/discussions/categories/q-a)
+[issues](https://github.com/dennisdeh/ib-docker/issues)
 section. There is a search function that will help you find solutions to common
 problems.
 
