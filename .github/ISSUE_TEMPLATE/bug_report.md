@@ -10,7 +10,7 @@ assignees: ''
 ## Before you submit this issue
 
 If this is not an issue but a request for help, please post it on the
-[discussions](https://github.com/dennisdeh/ib-gateway-docker/discussions/categories/q-a)
+[discussions](https://github.com/dennisdeh/ib-docker/discussions/categories/q-a)
 section. There is a search function that will help you find solutions to common
 problems.
 
@@ -29,11 +29,11 @@ docker pull ghcr.io/dennisdeh/tws-rdesktop:stable
 Please make sure that you are using the `docker-compose.yml` file provided as
 example, it is tested and you should be able to get things working by using it.
 
-- [docker-compose.yml](https://github.com/dennisdeh/ib-gateway-docker/blob/master/docker-compose.yml)
+- [docker-compose.yml](https://github.com/dennisdeh/ib-docker/blob/master/docker-compose.yml)
   — the `ib-gateway` and `tws` services both live in it; `IB_APP` in `.env`
   selects which one runs
 
-The example `.env` file on [README.md](https://github.com/dennisdeh/ib-gateway-docker/blob/master/README.md)
+The example `.env` file on [README.md](https://github.com/dennisdeh/ib-docker/blob/master/README.md)
 contains safe default values. Make sure you test the container using it as
 starting point.
 

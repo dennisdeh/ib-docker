@@ -53,6 +53,9 @@ setup() {
 # Credit for the project this was forked from belongs in LICENSE and the README.
 # Nothing that runs - workflow, image, compose file, script or test - may depend
 # on that repository. See docs/DECISIONS.md #17.
+#
+# `naming.bats` is excluded for the same reason `*.md` is: it asserts that the
+# credit still names that project correctly, so it has to contain the string.
 @test "decoupled: nothing that runs references the forked-from project" {
 	local hits
 	hits="$(find \
@@ -61,6 +64,7 @@ setup() {
 		"${ROOT}/Dockerfile.template" "${ROOT}/Dockerfile.tws.template" \
 		"${ROOT}/docker-compose.yml" "${ROOT}/update.sh" \
 		-type f ! -name '*.md' ! -name "$(basename "${BATS_TEST_FILENAME}")" \
+		! -name 'naming.bats' \
 		-exec grep -li 'gnzsnz' {} + 2>/dev/null || true)"
 	[ -z "$hits" ] || {
 		echo "credit belongs in LICENSE and the README, not in what runs:"
