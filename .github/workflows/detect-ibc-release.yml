@@ -34,6 +34,34 @@ jobs:
           CURRENT_IBC="$(grep 'ENV IBC_VERSION' Dockerfile.template|cut -d '=' -f 2)"
           echo "CURRENT_IBC=$CURRENT_IBC" >> $GITHUB_OUTPUT
 
+      # Runs every day whatever the outcome below, because the failure it
+      # catches is silent: on 2026-08-27 an IBC bump to 3.24.2 was merged that
+      # moved ENV IBC_VERSION and left ARG IBC_SHA256 on 3.24.1's digest. It
+      # broke nothing that day - the channels still carried 3.24.1 - but the
+      # next gateway release renders a channel from this template, and that
+      # build dies at `sha256sum --check`.
+      #
+      # It got there because the branch had been opened by a run from before
+      # the recompute step below existed, and `verify_branch` skips a branch
+      # that already exists, so it was never regenerated. This step does not
+      # care how the mismatch arrived.
+      - name: Verify the pinned IBC digest
+        env:
+          CURRENT_IBC: ${{ steps.version.outputs.CURRENT_IBC }}
+        run: |
+          pinned="$(sed -n 's/^ARG IBC_SHA256=//p' Dockerfile.template | head -1)"
+          ibc_zip="IBCLinux-${CURRENT_IBC}.zip"
+          curl -sSLf -o "$ibc_zip" \
+            "${IBC_REPO%.git}/releases/download/${CURRENT_IBC}/${ibc_zip}"
+          actual="$(sha256sum "$ibc_zip" | cut -d ' ' -f 1)"
+          rm -f "$ibc_zip"
+          if [ "$pinned" != "$actual" ]; then
+            echo "::error::Dockerfile.template pins IBC ${CURRENT_IBC} with digest ${pinned}, but that release hashes to ${actual}."
+            echo "::error::The next build generated from this template will fail sha256sum --check. Set ARG IBC_SHA256=${actual}, or delete the stale IBC-update branch and let this workflow reopen it."
+            exit 1
+          fi
+          echo ".> IBC ${CURRENT_IBC} digest matches: ${actual}"
+
       - name: Get IBC latest version
         id: ibc_version
         env:

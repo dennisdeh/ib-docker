@@ -22,16 +22,88 @@ expand_template() {
 	sed -e "s/\$VERSION/$2/g" -e "s/\$CHANNEL/$1/g" "$3"
 }
 
+# `detect-ibc-release.yml` bumps IBC_VERSION in the two templates and
+# deliberately does not run update.sh - the next gateway release propagates it.
+# So between an IBC bump and that release the channels legitimately carry an
+# older IBC than the template, and the parity checks below have to allow for
+# exactly that one line while still requiring everything else to match byte for
+# byte. See docs/DECISIONS.md #2.
+#
+# This is not hypothetical: IBC 3.24.2 landed in the templates on 2026-08-27 and
+# turned both parity tests red on master, because they demanded equality the
+# design forbids.
+# IBC_SHA256 is exempted with it, and must be: IBC ships no checksum file, so
+# the digest is pinned beside the version and has to move with it. A channel
+# lagging on IBC therefore lags on the digest too, and that pairing is checked
+# on its own below rather than being allowed to drift unwatched.
+ibc_agnostic() {
+	sed -e 's/^ENV IBC_VERSION=.*/ENV IBC_VERSION=<any>/' \
+		-e 's/^ARG IBC_SHA256=.*/ARG IBC_SHA256=<any>/'
+}
+
+# Every file that pins an IBC version, and the digest it pins with it.
+ibc_pins() {
+	local f
+	for f in "${ROOT}/Dockerfile.template" "${ROOT}/latest/Dockerfile" \
+		"${ROOT}/stable/Dockerfile"; do
+		printf '%s %s %s\n' \
+			"$(sed -n 's/^ENV IBC_VERSION=//p' "$f" | head -1)" \
+			"$(sed -n 's/^ARG IBC_SHA256=//p' "$f" | head -1)" \
+			"${f#"${ROOT}/"}"
+	done
+}
+
+@test "build: the IBC digest moves with the IBC version" {
+	# The bug this exists for: on 2026-08-27 an IBC bump to 3.24.2 was merged
+	# that changed ENV IBC_VERSION in both templates and left ARG IBC_SHA256 on
+	# 3.24.1's digest. Nothing failed - the channels still carried 3.24.1 and
+	# built fine - but the next gateway release renders the channel from that
+	# template, and the build would have died at `sha256sum --check`.
+	#
+	# Offline the digest itself cannot be verified. What can be: two files that
+	# pin the same IBC version must pin the same digest, and two that pin
+	# different versions must not. The second half is what catches a bumped
+	# version carrying the old digest.
+	local -A sha_of=()
+	local version sha file
+	while read -r version sha file; do
+		[ -n "$version" ] || continue
+		[ -n "$sha" ] || continue
+		if [ -n "${sha_of[$version]:-}" ] && [ "${sha_of[$version]}" != "$sha" ]; then
+			echo "IBC ${version} is pinned to two different digests; ${file} says ${sha}"
+			ibc_pins
+			return 1
+		fi
+		sha_of["$version"]="$sha"
+	done < <(ibc_pins)
+
+	# Distinct versions must not share a digest.
+	local a b
+	for a in "${!sha_of[@]}"; do
+		for b in "${!sha_of[@]}"; do
+			[ "$a" = "$b" ] && continue
+			[ "${sha_of[$a]}" != "${sha_of[$b]}" ] || {
+				echo "IBC ${a} and ${b} share a digest - a version was bumped"
+				echo "without recomputing ARG IBC_SHA256, and the next build"
+				echo "generated from that template fails sha256sum --check."
+				ibc_pins
+				return 1
+			}
+		done
+	done
+}
+
 @test "channels: Dockerfile is exactly update.sh's output for the template" {
 	local channel version
 	for channel in $CHANNELS; do
 		version="$(channel_version "$channel")"
 		[ -n "$version" ]
 		run diff -u \
-			<(expand_template "$channel" "$version" "${ROOT}/Dockerfile.template") \
-			"${ROOT}/${channel}/Dockerfile"
+			<(expand_template "$channel" "$version" "${ROOT}/Dockerfile.template" | ibc_agnostic) \
+			<(ibc_agnostic <"${ROOT}/${channel}/Dockerfile")
 		[ "$status" -eq 0 ] || {
 			echo "${channel}/Dockerfile is stale - run ./update.sh ${channel} ${version}"
+			echo "(IBC_VERSION is exempt; everything else must match)"
 			echo "$output"
 			return 1
 		}
@@ -43,10 +115,11 @@ expand_template() {
 	for channel in $CHANNELS; do
 		version="$(channel_version "$channel")"
 		run diff -u \
-			<(expand_template "$channel" "$version" "${ROOT}/Dockerfile.tws.template") \
-			"${ROOT}/${channel}/Dockerfile.tws"
+			<(expand_template "$channel" "$version" "${ROOT}/Dockerfile.tws.template" | ibc_agnostic) \
+			<(ibc_agnostic <"${ROOT}/${channel}/Dockerfile.tws")
 		[ "$status" -eq 0 ] || {
 			echo "${channel}/Dockerfile.tws is stale - run ./update.sh ${channel} ${version}"
+			echo "(IBC_VERSION is exempt; everything else must match)"
 			echo "$output"
 			return 1
 		}

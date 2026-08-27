@@ -199,6 +199,20 @@ line_of() {
 	[ "$status" -ne 0 ]
 }
 
+@test "detect-ibc: the pinned IBC digest is verified every run" {
+	# IBC ships no checksum file, so the digest is pinned by hand beside the
+	# version. A bump that moves one and not the other breaks nothing until a
+	# gateway release renders a channel from the template - which is exactly
+	# what was merged on 2026-08-27. The check must not sit behind the
+	# "is there an update / does the branch exist" conditions that let it
+	# through, so it carries no `if:`.
+	run step_block "${WORKFLOWS}/detect-ibc-release.yml" "Verify the pinned IBC digest"
+	[ -n "$output" ]
+	[[ $output != *"if:"* ]]
+	[[ $output == *"sha256sum"* ]]
+	[[ $output == *"ARG IBC_SHA256="* ]]
+}
+
 @test "workflows: CI builds the bastion it publishes" {
 	# publish.yml pushes this image, so a break must fail the PR check rather
 	# than a release.

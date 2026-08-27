@@ -413,6 +413,38 @@ IB release, GitHub-hosted runners and push credentials for `ghcr.io`. The first
 live proof will be the next IB Gateway version, or a `workflow_dispatch` of
 `publish.yml` against a channel.
 
+### 21. An IBC bump shipped the previous version's digest — **FIXED**
+
+*2026-08-27.* `IBC-update-3.24.2` was merged (PR #17) carrying
+`ENV IBC_VERSION=3.24.2` in both templates and `ARG IBC_SHA256` still on
+3.24.1's digest. Verified against the real releases:
+
+```text
+IBC 3.24.1  d99ee28cc3539e3843fb00d28dc484c255006b0063d38f0808ac3ef07dd88bb8
+IBC 3.24.2  cc097ca1dfa75413a5fbe02e4743050af15f3308eb6a97c769b3cff9850c80c5
+```
+
+Nothing failed at the time, which is what makes it worth recording: both
+channels still pinned 3.24.1 with its matching digest, so every build kept
+working. The next gateway release runs `update.sh`, which renders the channel
+from the template — and that build dies at `sha256sum --check`, in a release
+job, on a bot commit.
+
+**Why the workflow's own safeguard did not fire.** `detect-ibc-release.yml`
+*does* recompute the digest, and even asserts the rewrite took. But that whole
+step lives inside *Create Pull Request*, which is skipped when
+`verify_branch` finds the branch already there — and `IBC-update-3.24.2` had
+been opened by a run from before the recompute existed. The duplicate-avoidance
+that `CLAUDE.md` warns against defeating is exactly what preserved the stale
+branch.
+
+Fixed three ways: the digest was corrected on `master`; a *Verify the pinned
+IBC digest* step now runs on every daily run, outside every conditional, and
+fails loudly with the digest to paste in; and `tests/unit/dockerfile.bats`
+pins the version↔digest pairing offline — two files pinning the same IBC
+version must pin the same digest, and two pinning different versions must not,
+which is precisely the shape of this bug. Shown red against the merged state.
+
 ## Low / accepted risk (record the decision if you accept it)
 
 | # | item | note |

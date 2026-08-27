@@ -329,7 +329,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 85 tests as of 2026-08-27.
+  container, no network, no credentials. 87 tests as of 2026-08-27.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,
@@ -440,6 +440,15 @@ trusting it — see *Debugging*.
   `Dockerfile.template` as `IBC_SHA256`,** and it must move with `IBC_VERSION`
   — `detect-ibc-release.yml` recomputes it. Changing the version without the
   digest fails the build at verification, which is the intended behaviour.
+  **That recompute lives inside the PR-creating step, which is skipped when the
+  bot branch already exists**, so a branch opened by an older run is never
+  regenerated — which is how IBC `3.24.2` reached `master` with `3.24.1`'s
+  digest on 2026-08-27. A *Verify the pinned IBC digest* step now runs on every
+  daily run outside every conditional, and `tests/unit/dockerfile.bats` pins the
+  version↔digest pairing offline. If a bot branch is stale, **delete that one
+  branch** and let the workflow reopen it — the rule against deleting
+  `update-*`/`IBC-update*` branches is about not doing it as routine cleanup.
+  See `docs/OPEN_ITEMS.md` #21.
 - **Each channel needs a release asset per architecture.** The build picks
   `…-standalone-linux-arm.sh` on aarch64 and `…-x64.sh` elsewhere, so a channel
   pinned to a version whose GitHub release carries only the x64 asset cannot

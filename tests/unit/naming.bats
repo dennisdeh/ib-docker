@@ -80,26 +80,41 @@ tree_grep() {
 	# The same five variables, substituted the same way, from the same sources
 	# as the "Update README" step of detect-releases.yml. envsubst is not in
 	# the bats image, and the template only ever uses the ${VAR} form.
+	#
+	# IBC is the exception. That step reads IBC_VERSION from Dockerfile.template,
+	# but detect-ibc-release.yml bumps the template without regenerating the
+	# README - so between an IBC bump and the next gateway release the README
+	# carries the older IBC, and it is right to: that is what the published
+	# images contain. Any of the three values in the tree is therefore accepted,
+	# which still pins every other byte. See docs/DECISIONS.md #2.
 	local latest stable latest_minor stable_minor ibc
 	latest="$(grep 'ENV IB_GATEWAY_VERSION=' "${ROOT}/latest/Dockerfile" | head -1 | cut -d '=' -f2)"
 	stable="$(grep 'ENV IB_GATEWAY_VERSION=' "${ROOT}/stable/Dockerfile" | head -1 | cut -d '=' -f2)"
 	latest_minor="$(cut -d '.' -f1,2 <<<"$latest")"
 	stable_minor="$(cut -d '.' -f1,2 <<<"$stable")"
-	ibc="$(grep 'ENV IBC_VERSION' "${ROOT}/Dockerfile.template" | cut -d '=' -f 2)"
 
-	sed -e "s|\${LATEST_VERSION}|${latest}|g" \
-		-e "s|\${STABLE_VERSION}|${stable}|g" \
-		-e "s|\${LATEST_MINOR}|${latest_minor}|g" \
-		-e "s|\${STABLE_MINOR}|${stable_minor}|g" \
-		-e "s|\${IBC_VERSION}|${ibc}|g" \
-		"${ROOT}/template_README.md" >"${BATS_TEST_TMPDIR}/README.expected"
+	local expected="${BATS_TEST_TMPDIR}/README.expected" matched='no'
+	for ibc in \
+		"$(grep 'ENV IBC_VERSION' "${ROOT}/Dockerfile.template" | cut -d '=' -f 2)" \
+		"$(grep 'ENV IBC_VERSION' "${ROOT}/latest/Dockerfile" | cut -d '=' -f 2)" \
+		"$(grep 'ENV IBC_VERSION' "${ROOT}/stable/Dockerfile" | cut -d '=' -f 2)"; do
+		sed -e "s|\${LATEST_VERSION}|${latest}|g" \
+			-e "s|\${STABLE_VERSION}|${stable}|g" \
+			-e "s|\${LATEST_MINOR}|${latest_minor}|g" \
+			-e "s|\${STABLE_MINOR}|${stable_minor}|g" \
+			-e "s|\${IBC_VERSION}|${ibc}|g" \
+			"${ROOT}/template_README.md" >"$expected"
+		if diff -q "$expected" "${ROOT}/README.md" >/dev/null; then
+			matched='yes'
+			break
+		fi
+	done
 
-	run diff -u "${BATS_TEST_TMPDIR}/README.expected" "${ROOT}/README.md"
-	[ "$status" -eq 0 ] || {
-		echo "README.md is not envsubst(template_README.md)."
-		echo "Edit template_README.md, then regenerate - a change written"
-		echo "straight into README.md is lost at the next IB release."
-		echo "$output"
+	[ "$matched" = 'yes' ] || {
+		echo "README.md is not envsubst(template_README.md) for any IBC version"
+		echo "present in the tree. Edit template_README.md, then regenerate - a"
+		echo "change written straight into README.md is lost at the next IB release."
+		diff -u "$expected" "${ROOT}/README.md" || true
 		return 1
 	}
 }

@@ -20,7 +20,7 @@ ARG IBC_URL="${IBC_REPO}/releases/download/${IBC_VERSION}/${IBC_FILE}"
 # IBC publishes no checksum file, so the digest is pinned here and MUST be
 # updated with IBC_VERSION. .github/workflows/detect-ibc-release.yml recomputes
 # it when it opens a version-bump PR. Measured 2026-08-25 for 3.24.1.
-ARG IBC_SHA256=d99ee28cc3539e3843fb00d28dc484c255006b0063d38f0808ac3ef07dd88bb8
+ARG IBC_SHA256=cc097ca1dfa75413a5fbe02e4743050af15f3308eb6a97c769b3cff9850c80c5
 
 WORKDIR /tmp/setup
 
