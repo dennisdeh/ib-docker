@@ -3,8 +3,9 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-26 — items 1-16 from the QA / adversarial QA sweep of
-2026-08-25; item 17 from wiring release detection to publication on 2026-08-26.*
+*Last updated: 2026-08-27 — items 1-16 from the QA / adversarial QA sweep of
+2026-08-25; item 17 from wiring release detection to publication on 2026-08-26;
+items 19-20 found on 2026-08-27 while writing `deploy/provision.sh`.*
 
 Verified clean in the same sweep, so nobody re-checks: **no secret has ever been
 committed** on any branch (`.env`, `.env.bak`, `*.pem`, `ssh/`, `data/`, `keylock`
@@ -424,3 +425,5 @@ live proof will be the next IB Gateway version, or a `workflow_dispatch` of
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
 | 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere | The bastion actually publishes `SSH_LISTEN_PORT=22222` on **0.0.0.0** — every other port here is pinned to `127.0.0.1`. Reachability is the point of a bastion, but a firewall rule written for 2222 protects nothing. |
 | 18 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
+| 19 | The bastion image is published nowhere | `docker-compose.yml` builds it from `bastion/` and tags it `dennisdeh/bastion:local-resolute`. The gateway and TWS images come from ghcr.io, so `deploy/provision.sh` could otherwise work from a bare host — but it has to build the bastion, and therefore needs this checkout. Publishing it beside the other two would close the gap. Found 2026-08-27 while writing `deploy/provision.sh`. |
+| 20 | `sshd_config.d/*.conf` is included but not covered by the provisioning hash | `bastion/sshd_config` opens with `Include /etc/ssh/sshd_config.d/*.conf`, and `set_checksum()` in `bastion/provision.sh` hashes `sshd_config` and the host keys but nothing from that directory. A file dropped in there can change `AllowTcpForwarding`, `PermitRootLogin` or the ciphers while `check_provision()` still reports a valid checksum. Nothing writes there today, which is why this is Low rather than High. Found 2026-08-27. |

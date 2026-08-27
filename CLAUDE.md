@@ -4,7 +4,7 @@
 what the code cannot — which command to trust, what "done" means, and which
 plausible-looking action is the wrong one.*
 
-*Last updated: 2026-08-26*
+*Last updated: 2026-08-27*
 
 ---
 
@@ -133,6 +133,24 @@ feature, not a bug.
   `docker compose build` builds only the selected service — naming a service
   enables its profile for that command, so `docker compose build tws` works
   whatever `IB_APP` says *(verified 2026-08-25)*.
+- **There are two compose stories, and only one of them is in this repository.**
+  `docker-compose.yml` here *builds* from `latest/`/`stable/` and is how the
+  image is developed. `deploy/provision.sh` *emits* a second compose file that
+  *pulls* the published image, holds no build context and no `$PWD`, and lives
+  outside the checkout with the keys and secrets it provisions — that is the
+  deployment story. Do not merge the two: the in-repo file's `name: inv_ibkr`
+  is the live project, which is exactly why the emitted one must never use it.
+  `provision.sh` refuses that name and refuses to run while `inv_gateway` /
+  `inv_bastion` are up. See `docs/RUNBOOK.md`.
+- **In `authorized_keys`, `permitopen` and `permitlisten` do not constrain each
+  other.** The first governs `-L`, the second `-R`, and `restrict` followed by
+  `port-forwarding` re-enables *both* directions. A key that names only one of
+  them leaves the other wide open — a client able to `-L` to the API could also
+  bind ports on the bastion, and the gateway able to `-R` could also reach
+  anything the bastion can see. Set both on every key, pinning the unused
+  direction to `127.0.0.1:1`. Measured against a live bastion on 2026-08-27,
+  after shipping it wrong in both directions; pinned by
+  `tests/unit/provision.bats`.
 - **Ports: the number the host publishes is the socat port, not the API port.**
   `set_ports()` in `image-files/scripts/common.sh` binds IB Gateway's API to
   4002 (paper) / 4001 (live) on the container's own loopback, and socat forwards
@@ -298,7 +316,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 63 tests as of 2026-08-26.
+  container, no network, no credentials. 77 tests as of 2026-08-27.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,
