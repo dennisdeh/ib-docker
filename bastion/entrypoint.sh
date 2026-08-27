@@ -12,6 +12,12 @@
 
 set -e
 
+# The path is the one inside the image, which shellcheck cannot resolve from
+# the repository; the source= directive below records where it actually lives.
+# shellcheck source=bastion/sshd_config_d.sh
+# shellcheck disable=SC1091
+. /sshd_config_d.sh
+
 DAEMON=sshd
 PROVISON=/etc/ssh/bastion_provisioned_hash
 declare -a SSHD_OPT
@@ -86,6 +92,36 @@ check_provision() {
 	fi
 }
 
+check_sshd_config_d() {
+	#
+	# The per-file hashes in $PROVISON prove no drop-in was edited. They say
+	# nothing about one being added or removed - every recorded line still
+	# checks out - and sshd_config includes whatever is in there. So compare
+	# the directory against the listing that was hashed with it.
+	#
+	if [ ! -f "$SSHD_CONFIG_D_LIST" ]; then
+		echo "> ERROR: $SSHD_CONFIG_D_LIST is missing."
+		echo "> This data/ was provisioned before the drop-in directory was"
+		echo "> covered by the checksum. Re-provision it; see docs/RUNBOOK.md."
+		echo "> 🔒 exiting ..."
+		exit 1
+	fi
+
+	if [ "$(sshd_config_d_list)" != "$(cat "$SSHD_CONFIG_D_LIST")" ]; then
+		echo "> ERROR: $SSHD_CONFIG_D does not match what was provisioned."
+		echo "> sshd_config includes every file in it, so this can change"
+		echo "> AllowTcpForwarding, PermitRootLogin or the ciphers."
+		echo "> provisioned:"
+		sed 's/^/>   /' "$SSHD_CONFIG_D_LIST"
+		echo "> found:"
+		sshd_config_d_list | sed 's/^/>   /'
+		echo "> 🔒 exiting ..."
+		exit 1
+	fi
+
+	echo "> 🔑 sshd_config.d matches ($(sshd_config_d_list | wc -l) drop-ins)."
+}
+
 bastion_banner() {
 	# show banner
 	if [ "$BANNER_ENABLED" == "yes" ]; then
@@ -136,6 +172,7 @@ set_CA() {
 
 commmon_start() {
 	check_provision
+	check_sshd_config_d
 	check_totp_users
 	set_totp
 	set_CA

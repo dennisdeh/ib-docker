@@ -118,9 +118,19 @@ checkout**, so no credential is one `git add` away from a public repository.
   written as a bare newline, which `file_env` reads back as the empty string,
   so the gateway would otherwise start and fail its IB login.
 
-One limitation: the bastion image is not published anywhere, so the script
-builds it from `bastion/` and therefore needs this checkout. Only the *gateway*
-and *TWS* images are pulled. See `docs/OPEN_ITEMS.md` #19.
+All three images are published, so the script pulls rather than builds. It falls
+back to building the bastion from `bastion/` when it cannot pull —
+`ghcr.io/dennisdeh` is private, so run `docker login ghcr.io` first, and a
+freshly bumped `IMAGE_VERSION` has no published tag until the next release.
+
+> **The bastion refuses to start on a `data/` provisioned before 2026-08-27.**
+> `sshd_config.d/*.conf` is now covered by the provisioning checksum — the files
+> and a listing of the directory, so an added or removed drop-in is caught too,
+> which no per-file hash can do. Data provisioned before that has no recorded
+> listing, and the container stops rather than skipping the check. Re-run
+> `deploy/provision.sh init` (or `bastion/provision.sh`) against the existing
+> `data/`; it is idempotent and keeps the host keys, so no client's
+> `known_hosts` changes.
 
 ## Provisioning the bastion `data/` directory
 

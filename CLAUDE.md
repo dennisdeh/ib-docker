@@ -316,17 +316,21 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 77 tests as of 2026-08-27.
+  container, no network, no credentials. 80 tests as of 2026-08-27.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,
   so `publish.yml`'s channel and version resolution is exercised rather than
   pattern-matched. Add a case there when changing what a step's shell decides;
   a text assertion can show only that code is present, never that it fires.
-- `tests/container/` starts one throwaway container from an existing image with
-  a command override that runs **only** the port-forwarding half of `run.sh`.
-  It never starts IBC, so it needs no credentials and never contacts IB — which
-  also means it can never generate a failed login against the account.
+- `tests/container/` starts throwaway containers from existing images.
+  `socat.bats` runs **only** the port-forwarding half of `run.sh` — it never
+  starts IBC, so it needs no credentials and never contacts IB, which also
+  means it can never generate a failed login against the account.
+  `bastion_hash.bats` provisions a throwaway `data/`, tampers with
+  `sshd_config.d` and asserts the bastion refuses to start; set `BASTION_IMAGE`
+  to test an image other than `ghcr.io/dennisdeh/bastion:latest`. 8 tests as of
+  2026-08-27, and **not run in CI** — see `DECISIONS.md` #11.
 - Nothing in the suite touches `inv_gateway`/`inv_bastion`.
 
 Two traps, both of which cost a debugging round already:
@@ -377,6 +381,12 @@ trusting it — see *Debugging*.
   **calls `publish.yml`**, which pushes `ib-gateway` and `tws-rdesktop` to
   `ghcr.io/dennisdeh` tagged `<version>`, `<major.minor>` and `<channel>`.
   Nobody has to merge or tag for the images to appear. *(In effect 2026-08-26.)*
+  - **`bastion` is published by the same workflow**, tagged with the
+    `ARG IMAGE_VERSION` its own Dockerfile declares — it carries no IB version,
+    so an IB tag on it would mean nothing. That is the one line to bump, and it
+    is what `publish.yml` and `deploy/provision.sh` both read. All three images
+    are published so a host can be provisioned without a checkout to build from.
+    *(2026-08-27; see `DECISIONS.md` #22.)*
   - The images are built from the **bot's own commit**, not from `master` — see
     `docs/DECISIONS.md` #14 for why, and for why it is a `workflow_call` rather
     than a pushed `v*` tag.

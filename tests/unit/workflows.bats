@@ -159,13 +159,47 @@ line_of() {
 	[ "$output" = "1" ]
 }
 
-@test "publish: both images are pushed to ghcr.io" {
+@test "publish: all three images are pushed to ghcr.io" {
 	run cat "${WORKFLOWS}/publish.yml"
 	[[ $output == *"ghcr.io/dennisdeh/ib-gateway"* ]]
 	[[ $output == *"ghcr.io/dennisdeh/tws-rdesktop"* ]]
+	# The bastion too, so a host can be provisioned without a checkout to
+	# build anything from. See docs/DECISIONS.md.
+	[[ $output == *"ghcr.io/dennisdeh/bastion"* ]]
 
 	run grep -c 'push: true' "${WORKFLOWS}/publish.yml"
-	[ "$output" = "2" ]
+	[ "$output" = "3" ]
+}
+
+@test "publish: the bastion is tagged with the version it declares" {
+	# It carries no IB version, so its tag comes from its own Dockerfile - the
+	# same shape as the channel version gate above.
+	run grep -qF "sed -n 's/^ARG IMAGE_VERSION=//p' bastion/Dockerfile" "${WORKFLOWS}/publish.yml"
+	[ "$status" -eq 0 ]
+	run grep -c 'ARG IMAGE_VERSION=' "${ROOT}/bastion/Dockerfile"
+	[ "$output" = "1" ]
+	# It is used by a LABEL, and went undeclared for long enough that every
+	# image reported its version as "-resolute".
+	run grep -q 'org.opencontainers.image.version=${IMAGE_VERSION}' "${ROOT}/bastion/Dockerfile"
+	[ "$status" -eq 0 ]
+}
+
+@test "publish: ghcr links the bastion package to this repository" {
+	# ghcr.io reads org.opencontainers.image.source to attach a package to a
+	# repository; pointing it elsewhere leaves the package orphaned.
+	run grep -q 'org.opencontainers.image.source=https://github.com/dennisdeh/' \
+		"${ROOT}/bastion/Dockerfile"
+	[ "$status" -eq 0 ]
+	run grep -q 'image.source=https://github.com/dennisdeh/docker-bastion' \
+		"${ROOT}/bastion/Dockerfile"
+	[ "$status" -ne 0 ]
+}
+
+@test "workflows: CI builds the bastion it publishes" {
+	# publish.yml pushes this image, so a break must fail the PR check rather
+	# than a release.
+	run grep -q 'context: ./bastion' "${WORKFLOWS}/build.yml"
+	[ "$status" -eq 0 ]
 }
 
 @test "publish: the job may write packages" {

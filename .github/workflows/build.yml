@@ -1,7 +1,8 @@
 name: Docker Image Build - ibgateway/TWS build
 
-# Builds both images for one channel and throws them away: nothing here is
-# published and no registry credentials are needed.
+# Builds the images for one channel - IB Gateway, TWS and the bastion - and
+# throws them away: nothing here is published and no registry credentials are
+# needed.
 #
 # The TWS image builds FROM the gateway image, so the gateway build is pushed to
 # a throwaway registry running beside the job and the TWS build reads it back
@@ -93,3 +94,21 @@ jobs:
             IB_VERSION=${{ env.CI_GATEWAY_TAG }}
           cache-from: type=gha,scope=${{ env.CHANNEL }}-tws
           cache-to: type=gha,mode=max,scope=${{ env.CHANNEL }}-tws
+
+      ###############################################################
+      #   Build the bastion
+      ###############################################################
+      # It carries no channel and no IB version, so both matrix legs build the
+      # same thing - cheap, because they share one cache scope, and worth it:
+      # publish.yml pushes this image, so a break here must fail CI rather than
+      # a release. Built once per leg rather than in a job of its own so the
+      # PR check stays a single "Build image" status.
+      - name: Build bastion Docker image
+        uses: docker/build-push-action@v7
+        with:
+          push: false
+          load: false
+          platforms: ${{ env.PLATFORMS }}
+          context: ./bastion
+          cache-from: type=gha,scope=bastion
+          cache-to: type=gha,mode=max,scope=bastion

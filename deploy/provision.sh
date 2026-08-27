@@ -49,7 +49,7 @@ GATEWAY_USER='ibgateway'
 BASTION_HOST='bastion'
 BASTION_PORT='22222'
 BASTION_BIND='127.0.0.1'
-BASTION_IMAGE='dennisdeh/bastion:local-resolute'
+BASTION_IMAGE=''
 NETWORK=''
 IB_UID='1000'
 IB_GID='1000'
@@ -349,15 +349,35 @@ bastion_users() {
 	printf '%s' "$users"
 }
 
-# The bastion image is built here, not pulled: it is not published anywhere.
-build_bastion_image() {
+# The bastion's own version, which `publish.yml` also reads to tag the image.
+resolve_bastion_image() {
+	[ -z "$BASTION_IMAGE" ] || return 0
+	local ver=''
+	if [ -f "${REPO_ROOT}/bastion/Dockerfile" ]; then
+		ver="$(sed -n 's/^ARG IMAGE_VERSION=//p' "${REPO_ROOT}/bastion/Dockerfile" | head -1)"
+	fi
+	BASTION_IMAGE="ghcr.io/dennisdeh/bastion:${ver:-latest}"
+}
+
+# Published alongside the gateway and TWS images, so this normally pulls. The
+# build stays as a fallback: ghcr.io/dennisdeh is private, so a host that has
+# not run `docker login ghcr.io` cannot pull, and a freshly bumped
+# IMAGE_VERSION has no published tag until the next release.
+ensure_bastion_image() {
 	if docker image inspect "$BASTION_IMAGE" >/dev/null 2>&1; then
 		log "bastion image present: ${BASTION_IMAGE}"
 		return 0
 	fi
-	[ -d "${REPO_ROOT}/bastion" ] || die "no bastion/ directory to build ${BASTION_IMAGE} from"
+	if docker pull -q "$BASTION_IMAGE" >/dev/null 2>&1; then
+		log "pulled ${BASTION_IMAGE}"
+		return 0
+	fi
+	warn "could not pull ${BASTION_IMAGE}"
+	warn "ghcr.io/dennisdeh is private - 'docker login ghcr.io' if you meant to pull it"
+	[ -d "${REPO_ROOT}/bastion" ] || die "and there is no bastion/ here to build it from"
 	log "building ${BASTION_IMAGE} from ${REPO_ROOT}/bastion"
-	docker build -t "$BASTION_IMAGE" "${REPO_ROOT}/bastion"
+	docker build -t "$BASTION_IMAGE" \
+		--build-arg "IMAGE_VERSION=${BASTION_IMAGE##*:}" "${REPO_ROOT}/bastion"
 }
 
 # authorized_keys and the users that own them are written *inside* the
@@ -716,7 +736,8 @@ do_init() {
 	create_secrets
 	create_gateway_key
 	create_client_keys
-	build_bastion_image
+	resolve_bastion_image
+	ensure_bastion_image
 	provision_bastion "$API_PORT"
 	pin_known_hosts
 	write_ssh_configs
@@ -827,6 +848,8 @@ usage() {
 		  --bastion-host HOST   name the gateway dials (default: ${BASTION_HOST})
 		  --bastion-port PORT   published ssh port (default: ${BASTION_PORT})
 		  --bastion-bind ADDR   interface to publish it on (default: ${BASTION_BIND})
+		  --bastion-image IMG   bastion image to pull
+		                        (default: ghcr.io/dennisdeh/bastion:<its IMAGE_VERSION>)
 		  --network NAME        docker network name siblings join
 		  --key-type TYPE       ed25519 or rsa (default: ${KEY_TYPE})
 		  --no-client-passphrase  leave client keys unencrypted
@@ -904,6 +927,10 @@ parse_args() {
 			;;
 		--bastion-bind)
 			BASTION_BIND="$2"
+			shift 2
+			;;
+		--bastion-image)
+			BASTION_IMAGE="$2"
 			shift 2
 			;;
 		--network)
