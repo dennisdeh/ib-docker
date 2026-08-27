@@ -3,6 +3,13 @@ FROM ubuntu:${BASE_VERSION}
 
 ARG BASE_VERSION
 ARG APT_PROXY
+# The image's own version, independent of any IB Gateway release. This
+# declaration is what `publish.yml` reads to tag the published image, the same
+# way it reads ENV IB_GATEWAY_VERSION from a channel Dockerfile - so this line
+# is the one place to bump it. It was previously used by the LABEL below
+# without ever being declared, which made every image report version
+# "-resolute".
+ARG IMAGE_VERSION=2604.01
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008,SC2028
 RUN if [ -n "$APT_PROXY" ]; then \
@@ -33,6 +40,7 @@ RUN if [ -n "$APT_PROXY" ]; then \
 COPY sshd_config /etc/ssh/
 COPY entrypoint.sh /
 COPY provision.sh /
+COPY sshd_config_d.sh /
 COPY bastion_banner.txt /
 
 # The healthcheck needs bash's /dev/tcp redirection, which JSON exec form
@@ -44,7 +52,10 @@ HEALTHCHECK --interval=30m --timeout=15s --start-period=10s \
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/sbin/sshd", "-D", "-e"]
 
-LABEL org.opencontainers.image.source=https://github.com/dennisdeh/docker-bastion.git
+# ghcr.io links a package to a repository through this label, so it names the
+# repository the image is built and published from - not the project it was
+# forked from, which bastion/README.md credits.
+LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-docker
 LABEL org.opencontainers.image.description="OpenSSH Bastion container"
 LABEL org.opencontainers.image.licenses=MIT
 LABEL org.opencontainers.image.version=${IMAGE_VERSION}-${BASE_VERSION}

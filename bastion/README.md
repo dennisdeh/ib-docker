@@ -125,7 +125,7 @@ ssh -i ~/.ssh/id_ed25519_remote -p 22222 -N \
 Install a different key
 
 ```bash
-cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-gateway-docker"
+cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-docker"
 sudo cp ~/.ssh/id_ed25519.pub data/home/deh/.ssh/authorized_keys
 sudo chown 1001:1001 data/home/deh/.ssh/authorized_keys
 sudo chmod 640      data/home/deh/.ssh/authorized_keys

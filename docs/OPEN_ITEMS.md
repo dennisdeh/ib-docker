@@ -3,14 +3,17 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-25 — from the QA / adversarial QA sweep of that date.*
+*Last updated: 2026-08-27 — items 1-16 from the QA / adversarial QA sweep of
+2026-08-25; item 17 from wiring release detection to publication on 2026-08-26;
+items 19-20 found on 2026-08-27 while writing `deploy/provision.sh`.*
 
 Verified clean in the same sweep, so nobody re-checks: **no secret has ever been
 committed** on any branch (`.env`, `.env.bak`, `*.pem`, `ssh/`, `data/`, `keylock`
 — 0 commits each, all refs); the full `pre-commit`
 hook set is green tree-wide (after the repairs recorded under *High* below); the IB API
-ports are bound to `127.0.0.1`; PR builds run with `push: false` and receive no
-registry credentials; `bastion/sshd_config` is genuinely hardened (publickey-only,
+ports are bound to `127.0.0.1`; PR builds still run with `push: false` — since
+2026-08-26 they hold a `packages: read` ghcr.io login, which pulls the base image
+and cannot push anything (item 16); `bastion/sshd_config` is genuinely hardened (publickey-only,
 `ForceCommand /usr/sbin/nologin`, `MaxSessions 0`, modern KEX/cipher/MAC lists).
 
 ## High
@@ -64,8 +67,10 @@ this is host state, not a commit). `cert.pem` is a public certificate and stays
 
 ## Medium
 
-*Four of the five were fixed on 2026-08-25 (branch `qa-medium-fixes`). Only
-item 7 is still open, because it needs a decision rather than a patch.*
+*Items 4-8 came from the 2026-08-25 sweep; four of the five were fixed the same
+day on branch `qa-medium-fixes`. Item 16 is still open — the local TWS build
+needs a decision (make the package public, or add a `build.args` entry) rather
+than a patch. Item 17 was found and fixed on 2026-08-26.*
 
 ### 4. IBC and the aarch64 JDK installed without verification — **FIXED**
 
@@ -79,6 +84,13 @@ digests are measured and pinned:
 
 The JDK branch also had `;` separators, so a failed download or extraction did
 not stop the build; it is `&&`-chained now.
+
+> *Superseded in part, 2026-08-25.* The Zulu JDK is no longer downloaded at all
+> — it was never used, see #17 — so `ZULU_SHA256` is gone with it. `IBC_SHA256`
+> is unchanged and still checked. The IB installer keeps its published
+> `.sha256`, and its download now uses `curl -f`, so a missing asset fails as a
+> 404 instead of saving an HTML error page and failing the checksum with a
+> misleading message.
 
 A pinned digest must move with `IBC_VERSION`, so
 `.github/workflows/detect-ibc-release.yml` recomputes it when it opens a bump
@@ -182,10 +194,11 @@ The live deployment is unaffected: with the real `.env` the same file still
 resolves to `inv_gateway`/`inv_bastion` on ports 9899/9898/9897 and bastion
 22222, confirmed by `docker compose config`.
 
-### 16. `docker compose build --pull tws` cannot work on a clean machine
+### 16. `docker compose build --pull tws` cannot work on a clean machine — **FIXED**
 
 *Found 2026-08-25, while verifying the merged compose file. Not caused by that
-merge — it predates it.*
+merge — it predates it. **CI half fixed 2026-08-26**; the local build is still
+open, so the workaround below is still the one to use here.*
 
 `Dockerfile.tws` starts `FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION}` with
 `IB_VERSION` defaulting to the channel's gateway version, so the TWS build needs
@@ -204,9 +217,201 @@ docker tag ghcr.io/dennisdeh/ib-gateway:latest ghcr.io/dennisdeh/ib-gateway:10.4
 docker compose build tws          # no --pull
 ```
 
-after which the TWS build completed. A real fix is either making the package
-public, or giving the `tws` service a `build.args` entry so `IB_VERSION` can be
-pointed at a locally built tag.
+after which the TWS build completed. **FIXED 2026-08-25.** `Dockerfile.tws.template` now takes the base image as two
+build args, `IB_GATEWAY_IMAGE` and `IB_VERSION`, defaulting to the ghcr
+reference so a published build is unchanged. The `tws` compose service passes
+`${IB_GATEWAY_IMAGE:-ghcr.io/dennisdeh/ib-gateway}` and `${IB_GATEWAY_TAG:-latest}`,
+and `latest` is the tag the `ib-gateway` service's own build produces — so
+
+```bash
+docker compose build ib-gateway
+docker compose build tws
+```
+
+works on a clean machine with no registry access and no manual `docker tag`.
+CI points the same two args at a job-local registry; see `DECISIONS.md` #15.
+
+### 17. The `linux/arm64` image could never have been built — **FIXED**
+
+*Found 2026-08-25, from the CI failures on `master`.*
+
+Every `Docker Image CI` run since `continue-on-error` was removed failed, always
+on the same step and always on the `arm64` leg:
+
+```text
+process "/dev/.buildkit_qemu_emulator /bin/sh -c apt-get update -y && …"
+  did not complete successfully: exit code: 255
+```
+
+Reproduced locally with `docker build --platform linux/arm64 ./latest`, which
+gives the readable form of the same failure:
+
+```text
+Starting Installer ...
+./ibgateway-10.48.1e-standalone-linux-x64.sh: 813:
+  /tmp/setup/ibgateway-…-x64.sh.6577.dir/jre/bin/java: not found
+```
+
+The installer bundles its own JRE and runs it. The x64 installer's JRE is an
+x86-64 binary, which cannot execute in an `aarch64` container — `sh` reports
+"not found", exit 127, which QEMU surfaces to BuildKit as 255.
+
+`app_java_home=/usr/local/zulu17` was meant to point the installer at the
+aarch64 Zulu JRE the build downloads for exactly this purpose. **It is not
+honoured**: the installer had already reached its own `jre/bin/java` by the time
+the message appeared. So the Zulu tarball was fetched, checksum-verified, copied
+into the runtime image and never used, on every build, on both architectures.
+
+The failure predates the reporting. `continue-on-error: true` (item #1) meant
+the job reported success regardless, so the last genuinely-green `arm64` build,
+if there ever was one, is not identifiable from the run history.
+
+**QEMU words the same fault two ways**, depending on how it declines the binary:
+`jre/bin/java: not found` and `Invalid ELF image for this architecture`. Both
+mean a wrong-architecture executable, both exit 255, and both are this bug — the
+second was seen on 2026-08-26 on branch `worktree-auto-publish-images`, which
+still carries the pre-fix Dockerfile. That log also shows the mechanism plainly:
+`zulu…tar.gz: OK` immediately before the installer reaches for its *own* bundled
+`jre/bin/java` anyway, which is the proof that `app_java_home` is ignored.
+
+**The fix** is to install the architecture's own installer —
+`…-standalone-linux-arm.sh` on `aarch64`, `…-x64.sh` elsewhere. IB publishes
+both and `detect-releases.yml` already attaches both to each release
+(`archs="x64 arm"`). The Zulu download and `ZULU_SHA256` are removed with it.
+
+`COPY --from=setup /usr/local/` was removed at the same time and **that was a
+mistake** — it does not carry Zulu, it carries the JVM the IB installer unpacks
+to `/usr/local/i4j_jres`. Two JVM-less images were built before it was caught
+while bumping `stable`. It is restored, and both runtime stages now end with a
+`find … -name java` + `java -version` step so the build fails rather than
+shipping an image whose launcher points at a JVM that is not there. See
+`DECISIONS.md` #18.
+
+Verified 2026-08-25 by building `./latest` for `linux/arm64` under QEMU, before
+and after: before, `jre/bin/java: not found`; after, the installer runs to
+completion and the image builds.
+
+### 18. `stable` was pinned to a version with no `arm` release asset — **FIXED**
+
+*Found 2026-08-25, while fixing #17.*
+
+The per-architecture download in #17 needs `…-standalone-linux-arm.sh` to exist
+in the channel's GitHub release. It does for `latest` (`10.48.1e`, HTTP 200) but
+**not** for `stable` as then pinned (`10.45.1g`, HTTP 404) — that release carries only the x64
+installer and its `.sha256`. So `stable` cannot build `linux/arm64` at any
+version it is currently pinned to, and its `arm64` leg fails on a missing file
+rather than on a broken JRE.
+
+This is a legacy gap, not an ongoing one: `detect-releases.yml` attaches both
+architectures, and every `stable` release from `10.45.1h` onward has the `arm`
+asset. `stable` is four releases behind because the bot's
+`update-stable-to-10.45.1j` branch (opened 2026-08-06) has never been merged.
+
+**Resolved by bumping `stable`, on the owner's instruction, 2026-08-25.**
+`./update.sh stable 10.45.1j` — that release carries both installers and both
+`.sha256` files (probed the same day: `arm` and `arm.sha256` HTTP 200). `stable`
+therefore builds `linux/arm64` again, and the interim restriction that had
+limited it to `linux/amd64` is gone from both workflows.
+
+`PLATFORMS` is now a plain `linux/amd64,linux/arm64` declared once in
+`build.yml` and once in `publish.yml`. The two must stay identical — if they
+drift, CI passes and the release then fails on the platform only one of them
+builds — and `tests/unit/workflows.bats` fails both on a mismatch and on
+`linux/arm64` being dropped altogether.
+
+This also moved `stable` four releases forward, from `10.45.1g`. The bot's
+`update-stable-to-10.45.1j` branch (opened 2026-08-06, never merged) is now
+redundant; its PR can be closed. `detect-releases.yml` will not reopen one,
+because it keys off the existence of the `ibgateway-stable@10.45.1j` release,
+which already exists.
+
+### 19. `apt-get` fails on the `linux/arm64` leg when Ubuntu is mid-publication — **MITIGATED**
+
+*Diagnosed 2026-08-25, from a local reproduction and the CI log of run
+`32901651857`, which agree exactly — same package, same mirror node.*
+
+```text
+Ign:1 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libssl3t64 3.0.13-0ubuntu3.15
+Err:1 ... 404  Not Found [IP: 91.189.92.20 80]
+E: Failed to fetch .../libssl3t64_3.0.13-0ubuntu3.15_arm64.deb  404  Not Found
+E: Unable to fetch some archives
+```
+
+Canonical had published `libssl3t64 3.0.13-0ubuntu3.15` into the `noble-updates`
+**index** before the `arm64` **pool** carried it. `apt-get upgrade` resolved to
+that version and got a 404; apt exits **100**. The `amd64` leg installed the
+same version from `archive.ubuntu.com` seconds earlier in the same build, which
+is why only the emulated leg died.
+
+Nothing in this repository causes it and nothing here can prevent it — it breaks
+any build of this tree, `master` included, during the publication window. The
+window closed on its own: a rebuild of the identical tree a short while later
+fetched the package with no error and no retry.
+
+**Mitigation, not a cure.** Each `apt-get` block in `Dockerfile.template` and
+`Dockerfile.tws.template` now retries up to three times, running `apt-get
+update` again between attempts so the index is re-read and DNS re-resolves,
+usually onto a different mirror node, and `exit 1` if all three fail rather than
+falling out of the loop silently. A sustained pool outage will still fail the
+build, correctly.
+
+**Reading a red `arm64` leg.** Three quite different causes, told apart by the
+exit code and how far it got:
+
+| symptom | cause |
+|---|---|
+| exit 255, `jre/bin/java: not found` **or** `Invalid ELF image for this architecture` | the x64-installer-on-aarch64 bug — fixed, see #17 |
+| exit 1 at the `java -version` step | no JVM survived into the runtime stage, see #18 and `DECISIONS.md` #18 |
+| exit 100, `404 Not Found` from `ports.ubuntu.com` | this item; retry, and if it persists check whether Ubuntu is mid-publication |
+
+**In CI this is now handled, on 2026-08-26**, and it had to be for the release
+automation to work at all. `build.yml` logs in to `ghcr.io` with the run's own
+`GITHUB_TOKEN` and carries `packages: read`, so the TWS leg can pull the gateway
+image of the version the channel already publishes; `on-push-n-pr.yml` and
+`detect-ibc-release.yml` grant the same scope, because a called workflow cannot
+hold a permission its caller withheld. Two limits remain, both by construction:
+
+- a version that has **never** been published cannot be built this way. That is
+  why `publish.yml` pushes the gateway before it builds TWS, and why the release
+  path goes through `publish.yml` rather than `build.yml`;
+- a pull request **from a fork** gets a read-only `GITHUB_TOKEN` with no access
+  to this repository's packages, so its TWS leg still fails. Nobody has opened
+  one; if that changes, making the package public is the fix.
+
+The local build is untouched — `docker compose build --pull tws` on this machine
+still needs the `docker tag` workaround above.
+
+### 17. Detecting a new IB Gateway version published nothing — **FIXED**
+
+*Found and fixed 2026-08-26, on branch `worktree-auto-publish-images`, while
+wiring detection to publication as asked.*
+
+`detect-releases.yml` created the GitHub release, regenerated the channel and
+opened the bump PR, then called `build.yml` — which builds with `push: false`.
+Reaching `ghcr.io` needed a human to merge the PR and push a
+`v<version>-<channel>` tag. Two further defects sat underneath that:
+
+- **The matrix job's outputs could not carry a per-channel answer.** Both legs
+  of `strategy.matrix.channel` wrote the same `outputs.update` and
+  `outputs.channel`, and a matrix job keeps only the last leg to finish, so the
+  downstream `build` job received one arbitrary channel — the wrong one roughly
+  half the time, and *neither* leg's version. The legs now hand over a small
+  JSON file each; a `collect` job reassembles them into the publish matrix.
+- **Tagging would not have worked either.** A `v*` tag pushed with
+  `GITHUB_TOKEN` starts no workflow run, so the obvious repair — have the bot
+  push the tag and let `publish.yml` notice — publishes nothing while reporting
+  success. `publish.yml` gained `workflow_call` and is invoked directly. See
+  `DECISIONS.md` #14.
+
+`publish.yml` also refuses to tag an image with a version it does not contain:
+it compares against `ENV IB_GATEWAY_VERSION=` in the channel Dockerfile it is
+building. Sixteen assertions in `tests/unit/workflows.bats` pin the wiring;
+thirteen of them were shown red against the pre-fix workflows on 2026-08-26.
+
+**Not verified end to end**, and it cannot be from here: the flow needs a real
+IB release, GitHub-hosted runners and push credentials for `ghcr.io`. The first
+live proof will be the next IB Gateway version, or a `workflow_dispatch` of
+`publish.yml` against a channel.
 
 ## Low / accepted risk (record the decision if you accept it)
 
@@ -219,4 +424,6 @@ pointed at a locally built tag.
 | 13 | Dependabot watches `/stable` and `/latest` only | Those are *generated*; a base-image bump there is overwritten by the next `update.sh`. The real sources (`Dockerfile.template`, `Dockerfile.tws.template`) and `/bastion` are unwatched, as is the floating tag `lscr.io/linuxserver/rdesktop:ubuntu-xfce`. |
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
 | 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere | The bastion actually publishes `SSH_LISTEN_PORT=22222` on **0.0.0.0** — every other port here is pinned to `127.0.0.1`. Reachability is the point of a bastion, but a firewall rule written for 2222 protects nothing. |
-| 16 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
+| 18 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
+| 19 | The bastion image is published nowhere — **FIXED 2026-08-27** | It was built from `bastion/` and tagged `dennisdeh/bastion:local-resolute`, so `deploy/provision.sh` needed a checkout to build one of the three images. `publish.yml` now pushes `ghcr.io/dennisdeh/bastion`, tagged with the `ARG IMAGE_VERSION` the bastion's own Dockerfile declares, and `provision.sh` pulls it and only falls back to building. `build.yml` builds it too, so a break fails the PR check rather than a release. |
+| 20 | `sshd_config.d/*.conf` is included but not covered by the provisioning hash — **FIXED 2026-08-27** | `bastion/sshd_config` opens with `Include /etc/ssh/sshd_config.d/*.conf`, and `set_checksum()` hashed `sshd_config` and the host keys but nothing from that directory, so a drop-in could set `PermitRootLogin` or widen `AllowTcpForwarding` while `check_provision()` still reported a valid checksum. Confirmed against the unfixed image: adding, editing **and** removing a drop-in all started normally. `set_checksum()` now hashes those files *and* a recorded listing of the directory — the files alone cannot catch an addition or a removal, since every recorded line still checks out — and `check_sshd_config_d()` in `entrypoint.sh` compares the listing before sshd starts. Pinned by `tests/container/bastion_hash.bats`. **Upgrading the image requires re-provisioning `data/`**: the container refuses to start on data provisioned before this, rather than skipping the check. |

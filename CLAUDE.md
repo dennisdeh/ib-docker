@@ -4,25 +4,45 @@
 what the code cannot — which command to trust, what "done" means, and which
 plausible-looking action is the wrong one.*
 
-*Last updated: 2026-08-25*
+*Last updated: 2026-08-27*
 
 ---
 
 ## Project overview
 
-A fork of [gnzsnz/ib-gateway-docker](https://github.com/gnzsnz/ib-gateway-docker)
-that builds Docker images running Interactive Brokers Gateway (and TWS) headless,
+Builds Docker images running Interactive Brokers Gateway (and TWS) headless,
 driven by [IBC](https://github.com/IbcAlpha/IBC) under Xvfb, with `socat` and/or
 an SSH tunnel exposing the IB API port outside the container. The published
-images are `ghcr.io/dennisdeh/ib-gateway` and `ghcr.io/dennisdeh/tws-rdesktop`.
+images are `ghcr.io/dennisdeh/ib-gateway`, `ghcr.io/dennisdeh/tws-rdesktop` and
+`ghcr.io/dennisdeh/bastion`.
+
+**The repository is `ib-docker`.** It was `ib-gateway-docker` until 2026-08-27;
+one `docker-compose.yml` now runs the gateway, TWS and the bastion behind
+profiles, so a name that mentioned only the gateway had stopped being true.
+**The rename was of the repository, not of the packages** — the three image
+names above are unchanged, and `Dockerfile.tws` still opens `FROM
+ghcr.io/dennisdeh/ib-gateway`. Two strings deliberately keep the old spelling
+and must survive any future sweep: `gnzsnz/ib-gateway-docker`, the project this
+was forked from, and the Investio vendored path below, which is a directory in
+somebody else's tree. `tests/unit/naming.bats` fails on any other occurrence.
+
+**This project is independent, not a tracking fork.** It began as a fork of
+`gnzsnz/ib-gateway-docker`, which `LICENSE` and the README credit, and that is
+the whole of the relationship: no remote, no sync, no check, no schedule and no
+decision here depends on that repository. Judge every question on this tree and
+on the real upstreams the image actually consumes — Interactive Brokers'
+installer servers, `IbcAlpha/IBC`, `lscr.io/linuxserver/rdesktop` and Azul.
+*(Decoupled on the owner's instruction, 2026-08-25.)*
 
 **This checkout is the source of the images, not the running deployment.**
 `inv_gateway` and `inv_bastion` are started from a vendored copy of this project
 inside the Investio repository, at
-`/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker`. Investio is
-expected to consume this repository later; until it does, a change merged here
-reaches the running stack only when someone updates that copy. *(Stated by the
-owner and confirmed from the containers' compose labels, 2026-08-25.)*
+`/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker` — still the
+old name, because renaming this repository does not rename a directory in
+Investio's tree. Investio is expected to consume this repository later; until it
+does, a change merged here reaches the running stack only when someone updates
+that copy. *(Stated by the owner and confirmed from the containers' compose
+labels, 2026-08-25; path re-confirmed unchanged 2026-08-27.)*
 
 > **Compose commands run here still hit those live containers.** This
 > repository's `docker-compose.yml` and the Investio copy both declare
@@ -45,7 +65,7 @@ owner and confirmed from the containers' compose labels, 2026-08-25.)*
 No language runtime, no virtualenv. What you need is Docker and the repo root:
 
 ```bash
-cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-gateway-docker"
+cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-docker"
 docker compose config   # validates .env + compose wiring without starting anything
 ```
 
@@ -58,12 +78,12 @@ docker compose config   # validates .env + compose wiring without starting anyth
   `python3 -m venv .venv && .venv/bin/pip install pre-commit`. **There is no
   `gh` — never plan a step around it.** PRs are opened in the browser, or the
   bot opens them from CI.
-- The remote is `origin` → `git@github.com:dennisdeh/ib-gateway-docker.git`.
-  It was HTTPS until 2026-08-25; over HTTPS every push prompted for a username
-  and failed in a non-interactive session. The machine's SSH key already
-  authenticates to GitHub as `dennisdeh`, so pushes need no token and no `gh`.
-  Upstream (`gnzsnz`) is **not** configured as a remote; add it explicitly if a
-  sync is requested.
+- The remote is `origin` → `git@github.com:dennisdeh/ib-docker.git`,
+  and it is the only one. It was HTTPS until 2026-08-25; over HTTPS every push
+  prompted for a username and failed in a non-interactive session. The machine's
+  SSH key already authenticates to GitHub as `dennisdeh`, so pushes need no
+  token and no `gh`. **Do not add the repository this was forked from as a
+  remote and do not sync from it** — see *Project overview*.
 
 ### What a fresh clone does not have
 
@@ -86,8 +106,13 @@ feature, not a bug.
 > by the `no-real-env-files` pre-commit hook, which fails even on a `git add -f`
 > *(both verified 2026-08-25)*. `.env-dist` stays tracked. Belt and braces are
 > there because the cost of one mistake is broker credentials in a public repo —
-> so still **stage files by name, never `git add -A` / `git add .`**. `.idea/`
-> is only partially ignored and has no such guard.
+> so still **stage files by name, never `git add -A` / `git add .`**. Neither
+> `.idea/` nor `.claude/` has such a guard, but both are now ignored wholesale
+> *(2026-08-26)*; `.idea/` used to name six specific files, so every new IDE file
+> reappeared as untracked noise. `.claude/*` is written with the glob, not the
+> bare directory, because git cannot re-include a file whose parent directory is
+> excluded — which is what lets `!.claude/settings.json` work while
+> `settings.local.json` and `worktrees/` stay ignored.
 
 ## Key conventions
 
@@ -113,7 +138,7 @@ feature, not a bug.
   `latest/`/`stable/` is expected, not a defect — do not "fix" it by running
   `update.sh` unless a version bump is what you were actually asked for. Both
   channels were last regenerated on 2026-08-25 and all three then read `3.24.1`
-  (gateway `10.48.1e` latest, `10.45.1g` stable).
+  (gateway `10.48.1e` latest, `10.45.1j` stable).
 - **One compose file, two applications.** `docker-compose.yml` holds an
   `ib-gateway` service and a `tws` service behind Compose profiles of the same
   name; `IB_APP` in `.env` feeds `COMPOSE_PROFILES` and decides which one is
@@ -121,6 +146,24 @@ feature, not a bug.
   `docker compose build` builds only the selected service — naming a service
   enables its profile for that command, so `docker compose build tws` works
   whatever `IB_APP` says *(verified 2026-08-25)*.
+- **There are two compose stories, and only one of them is in this repository.**
+  `docker-compose.yml` here *builds* from `latest/`/`stable/` and is how the
+  image is developed. `deploy/provision.sh` *emits* a second compose file that
+  *pulls* the published image, holds no build context and no `$PWD`, and lives
+  outside the checkout with the keys and secrets it provisions — that is the
+  deployment story. Do not merge the two: the in-repo file's `name: inv_ibkr`
+  is the live project, which is exactly why the emitted one must never use it.
+  `provision.sh` refuses that name and refuses to run while `inv_gateway` /
+  `inv_bastion` are up. See `docs/RUNBOOK.md`.
+- **In `authorized_keys`, `permitopen` and `permitlisten` do not constrain each
+  other.** The first governs `-L`, the second `-R`, and `restrict` followed by
+  `port-forwarding` re-enables *both* directions. A key that names only one of
+  them leaves the other wide open — a client able to `-L` to the API could also
+  bind ports on the bastion, and the gateway able to `-R` could also reach
+  anything the bastion can see. Set both on every key, pinning the unused
+  direction to `127.0.0.1:1`. Measured against a live bastion on 2026-08-27,
+  after shipping it wrong in both directions; pinned by
+  `tests/unit/provision.bats`.
 - **Ports: the number the host publishes is the socat port, not the API port.**
   `set_ports()` in `image-files/scripts/common.sh` binds IB Gateway's API to
   4002 (paper) / 4001 (live) on the container's own loopback, and socat forwards
@@ -218,7 +261,9 @@ docker run --rm -v "$PWD:/workdir" -w /workdir davidanson/markdownlint-cli2:late
 - `MD013` (line length) is off in `.markdownlint.yaml` on purpose: `README.md` is
   generated and mostly wide option tables. Do not reflow it by hand.
 - **Do not reorder `.env-dist`** to satisfy a stricter `dotenv-linter` than the
-  pinned hook. It churns a file kept aligned with upstream for no gain.
+  pinned hook. The file is grouped by service and by concern, which is what
+  makes it readable as the key list for two compose files; alphabetical order
+  would scatter each service's keys for no gain the pinned hook asks for.
 
 ### 2. Build — offline, slow
 
@@ -226,13 +271,25 @@ docker run --rm -v "$PWD:/workdir" -w /workdir davidanson/markdownlint-cli2:late
 timeout 1800 docker compose build --pull ib-gateway   # builds ./latest
 docker build -t ib-gateway:check ./stable             # the other channel
 
-# tws builds FROM ghcr.io/dennisdeh/ib-gateway:<version>, which is not
-# anonymously pullable - see OPEN_ITEMS #16 before reaching for --pull here
-docker tag ghcr.io/dennisdeh/ib-gateway:latest ghcr.io/dennisdeh/ib-gateway:10.48.1e
+# tws builds FROM the gateway image; the compose defaults point it at the
+# :latest tag the line above produces, so no registry access is needed
 timeout 2400 docker compose build tws
 ```
 
 Report the outcome. A build that was not run is not a build that passed.
+
+**A build on this machine only proves `linux/amd64`.** CI builds both
+architectures, and the two take genuinely different paths through
+`Dockerfile.template` — IB ships a separate installer per architecture. To
+reproduce the CI leg, register the emulator once
+(`docker run --privileged --rm tonistiigi/binfmt --install arm64`, undo with
+`--uninstall`), then:
+
+```bash
+timeout 2400 docker build --platform linux/arm64 -t ib-gateway:arm64 ./latest
+```
+
+Expect roughly 25 minutes under emulation, most of it the IB installer.
 
 ### 3. Runtime — the live containers are not ours to touch
 
@@ -270,12 +327,23 @@ tests/run.sh all
 (`.github/workflows/test.yml`).
 
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
-  reads `docker-compose.yml` and `.env-dist` as text — no container, no network,
-  no credentials. 26 tests as of 2026-08-25.
-- `tests/container/` starts one throwaway container from an existing image with
-  a command override that runs **only** the port-forwarding half of `run.sh`.
-  It never starts IBC, so it needs no credentials and never contacts IB — which
-  also means it can never generate a failed login against the account.
+  reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
+  which does the same for the release automation in `.github/workflows/` — no
+  container, no network, no credentials. 85 tests as of 2026-08-27.
+- **`workflows.bats` also *runs* the shell those workflows contain.** Its
+  `step_script()` lifts a step's `run:` body out of the YAML and executes it
+  under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,
+  so `publish.yml`'s channel and version resolution is exercised rather than
+  pattern-matched. Add a case there when changing what a step's shell decides;
+  a text assertion can show only that code is present, never that it fires.
+- `tests/container/` starts throwaway containers from existing images.
+  `socat.bats` runs **only** the port-forwarding half of `run.sh` — it never
+  starts IBC, so it needs no credentials and never contacts IB, which also
+  means it can never generate a failed login against the account.
+  `bastion_hash.bats` provisions a throwaway `data/`, tampers with
+  `sshd_config.d` and asserts the bastion refuses to start; set `BASTION_IMAGE`
+  to test an image other than `ghcr.io/dennisdeh/bastion:latest`. 8 tests as of
+  2026-08-27, and **not run in CI** — see `DECISIONS.md` #11.
 - Nothing in the suite touches `inv_gateway`/`inv_bastion`.
 
 Two traps, both of which cost a debugging round already:
@@ -320,9 +388,44 @@ trusting it — see *Debugging*.
 
 - CI does not run on `update-*-to-*` or `IBC-update*` branches (by design); it
   runs on every other branch and on PRs to `master`.
-- Publishing is tag-driven: pushing `v*` triggers `publish.yml`, which derives
-  the channel from the **second dash-separated field of the tag name** and now
-  refuses anything that is not `stable`/`latest`. Tag as `v<version>-<channel>`.
+- **A new IB Gateway version publishes itself.** `detect-releases.yml` polls IB
+  daily, and for a channel that moved it attaches the installers to a release
+  here, runs `update.sh`, regenerates `README.md`, opens the bump PR — and then
+  **calls `publish.yml`**, which pushes `ib-gateway` and `tws-rdesktop` to
+  `ghcr.io/dennisdeh` tagged `<version>`, `<major.minor>` and `<channel>`.
+  Nobody has to merge or tag for the images to appear. *(In effect 2026-08-26.)*
+  - **`bastion` is published by the same workflow**, tagged with the
+    `ARG IMAGE_VERSION` its own Dockerfile declares — it carries no IB version,
+    so an IB tag on it would mean nothing. That is the one line to bump, and it
+    is what `publish.yml` and `deploy/provision.sh` both read. All three images
+    are published so a host can be provisioned without a checkout to build from.
+    *(2026-08-27; see `DECISIONS.md` #22.)*
+  - The images are built from the **bot's own commit**, not from `master` — see
+    `docs/DECISIONS.md` #14 for why, and for why it is a `workflow_call` rather
+    than a pushed `v*` tag.
+  - One IB version drives **both** images: `update.sh` renders `Dockerfile.tws`
+    from the same `$VERSION`, so there is no separate TWS version to detect.
+  - IBC bumps do **not** publish, and that is deliberate — `detect-ibc-release.yml`
+    touches only the templates, so no channel image changes. See `DECISIONS.md` #2.
+- Publishing is *also* tag-driven, for a release by hand: pushing `v*` triggers
+  `publish.yml`, which derives the channel from the **second dash-separated
+  field of the tag name** and refuses anything that is not `stable`/`latest`.
+  Tag as `v<version>-<channel>`. A `workflow_dispatch` on `publish.yml` is the
+  third way in — pick a channel, leave the version blank to take it from
+  `<channel>/Dockerfile`.
+- **`publish.yml` refuses to tag an image with a version it does not contain.**
+  It compares the version it is about to publish against
+  `ENV IB_GATEWAY_VERSION=` in the channel Dockerfile it is building and fails
+  on a mismatch. That is the one publishing mistake nothing downstream can see.
+- Docker Hub is a mirror and is skipped when `DOCKERHUB_USERNAME` /
+  `DOCKERHUB_TOKEN` are unset; ghcr.io is never optional.
+- **`ghcr.io/dennisdeh/ib-gateway` is not anonymously pullable, and
+  `Dockerfile.tws` starts `FROM` it.** Every workflow that builds the TWS image
+  therefore logs in to ghcr.io and carries `packages: read` (`packages: write`
+  when publishing) — including the caller, since a called workflow cannot hold
+  a permission its caller withheld. A version that has never been published
+  cannot be built this way at all, which is why `publish.yml` pushes the gateway
+  *before* it builds TWS. See `docs/OPEN_ITEMS.md` #16.
 - Every workflow job declares least-privilege `permissions:`. If a step starts
   failing on a token scope, widen *that job*, not the repository default.
 - `detect-releases.yml` and `detect-ibc-release.yml` run daily at 06:00 UTC and
@@ -333,11 +436,21 @@ trusting it — see *Debugging*.
   releases and downloaded by `Dockerfile.template` from `dennisdeh/…`, with a
   `sha256sum --check`. A build failing at the checksum step usually means the
   release asset is missing, not that the Dockerfile is wrong.
-- **IBC and the aarch64 Zulu JDK ship no checksum file, so their digests are
-  pinned in `Dockerfile.template` as `IBC_SHA256` / `ZULU_SHA256`.** `IBC_SHA256`
-  must move with `IBC_VERSION` — `detect-ibc-release.yml` recomputes it — and
-  `ZULU_SHA256` must move with `ZULU_NAME`. Changing either version without its
+- **IBC ships no checksum file, so its digest is pinned in
+  `Dockerfile.template` as `IBC_SHA256`,** and it must move with `IBC_VERSION`
+  — `detect-ibc-release.yml` recomputes it. Changing the version without the
   digest fails the build at verification, which is the intended behaviour.
+- **Each channel needs a release asset per architecture.** The build picks
+  `…-standalone-linux-arm.sh` on aarch64 and `…-x64.sh` elsewhere, so a channel
+  pinned to a version whose GitHub release carries only the x64 asset cannot
+  build `linux/arm64` at all. `detect-releases.yml` uploads both
+  (`archs="x64 arm"`); a few releases from before that change carry the x64
+  asset only. **`PLATFORMS` is declared twice and the two must agree** — in
+  `build.yml` and in `publish.yml`. If they drift, CI passes and the release
+  then fails on the platform only one of them builds;
+  `tests/unit/workflows.bats` fails on that, and on `linux/arm64` being dropped.
+  Both channels are on versions that have the arm asset as of 2026-08-25
+  (`10.48.1e` latest, `10.45.1j` stable). See `docs/OPEN_ITEMS.md` #18.
 
 ---
 
@@ -389,9 +502,10 @@ doing?"*. A finding that turns out to be by design moves to `DECISIONS.md`
 ## Before investigating, check the docs
 
 Read `docs/OPEN_ITEMS.md` and `docs/DECISIONS.md` before starting any
-investigation from scratch — then check their vintage. Also check upstream
-(`gnzsnz/ib-gateway-docker`) issues before concluding a bug is ours; most of
-this code is inherited.
+investigation from scratch — then check their vintage. Every bug found here is
+ours to fix; do not go looking for it in the repository this was forked from,
+and do not treat that repository's behaviour as evidence about ours. Its CI
+carries `continue-on-error: true`, so a green badge there means nothing.
 
 ---
 

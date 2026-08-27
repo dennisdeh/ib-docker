@@ -1,5 +1,20 @@
 name: Detect IB Gateway Releases
 
+# Daily: ask Interactive Brokers what the current build is for each channel,
+# and when it has moved, attach the installers to a release here, regenerate
+# the channel with update.sh, open a PR - and publish both images for that
+# channel to ghcr.io.
+#
+# The version this reads drives BOTH images: `update.sh` renders
+# `Dockerfile.tws` from the same `$VERSION`, and the TWS image copies its IB
+# install out of the gateway image, so IB Gateway and TWS never carry separate
+# version numbers. One detection is therefore all either image needs.
+#
+# The images are published from the bot's own commit, before anyone merges the
+# PR. That commit is master plus the deterministic output of `update.sh`, which
+# is exactly what the merge would publish later, and waiting for a human would
+# put the manual step back. See docs/DECISIONS.md.
+
 on:
   schedule:
     - cron: "0 6 * * *"
@@ -16,9 +31,6 @@ jobs:
     permissions:
       contents: write        # gh release create, push the bump branch
       pull-requests: write   # gh pr create
-    outputs:
-      update: ${{ steps.check-update.outputs.has_update }}
-      channel: ${{ matrix.channel }}
     strategy:
       fail-fast: true
       matrix:
@@ -128,6 +140,7 @@ jobs:
           envsubst '$LATEST_VERSION,$LATEST_MINOR,$STABLE_VERSION,$STABLE_MINOR,$IBC_VERSION' < template_README.md > README.md
 
       - name: Create PR
+        id: pr
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -143,15 +156,82 @@ jobs:
           git commit -m "Update \`${CHANNEL}\` to \`${BUILD_VERSION}\`"
           git push --set-upstream origin "$t_branch"
 
+          # The publish job builds this exact commit, not the branch name: a
+          # rerun, or a human pushing to the branch, must not change what was
+          # published under this version.
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
           gh pr create --base master --fill
 
+      - name: Record what to publish
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
+          HAS_UPDATE: ${{ steps.check-update.outputs.has_update }}
+          COMMIT_SHA: ${{ steps.pr.outputs.sha }}
+        run: |
+          # A matrix job cannot hand a value back per leg: every leg writes the
+          # same `outputs:` name and the last one to finish wins, so `stable`
+          # and `latest` would overwrite each other's version. The legs pass
+          # files instead, and the collect job below reassembles them.
+          mkdir -p pending
+          jq -n \
+            --argjson updated "${HAS_UPDATE:-false}" \
+            --arg channel "$CHANNEL" \
+            --arg version "$BUILD_VERSION" \
+            --arg ref "${COMMIT_SHA:-}" \
+            '{updated: $updated, channel: $channel, version: $version, ref: $ref}' \
+            > "pending/${CHANNEL}.json"
+          cat "pending/${CHANNEL}.json"
 
-  build:
-    name: Call build workflow
+      - name: Upload publish plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: pending-${{ matrix.channel }}
+          path: pending/${{ matrix.channel }}.json
+          retention-days: 1
+
+  collect:
+    name: Collect publish plan
     needs: detect-release
-    if: needs.detect-release.outputs.update == 'true'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-    uses: dennisdeh/ib-gateway-docker/.github/workflows/build.yml@master
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - name: Download publish plans
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pending-*
+          path: pending
+          merge-multiple: true
+
+      - name: Build the publish matrix
+        id: plan
+        run: |
+          targets="$(jq -sc '[.[] | select(.updated) | {channel, version, ref}]' pending/*.json)"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "$targets"
+
+  publish:
+    name: Publish ${{ matrix.target.channel }}
+    needs: collect
+    # `success()` is spelled out because an explicit `if:` REPLACES the implicit
+    # one. Without it, a failed or skipped `collect` still reaches this job with
+    # an empty `targets`, and `fromJSON('')` below is a hard error.
+    if: ${{ success() && needs.collect.outputs.targets != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # One channel failing to publish must not cancel the other's push.
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.collect.outputs.targets) }}
+    uses: ./.github/workflows/publish.yml
     with:
-        channel: ${{ needs.detect-release.outputs.channel }}
+      channel: ${{ matrix.target.channel }}
+      version: ${{ matrix.target.version }}
+      ref: ${{ matrix.target.ref }}
+    secrets: inherit

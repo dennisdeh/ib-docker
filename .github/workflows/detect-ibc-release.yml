@@ -136,6 +136,6 @@ jobs:
     strategy:
       matrix:
         channel: ['stable', 'latest']
-    uses: dennisdeh/ib-gateway-docker/.github/workflows/build.yml@master
+    uses: ./.github/workflows/build.yml
     with:
         channel: ${{ matrix.channel }}

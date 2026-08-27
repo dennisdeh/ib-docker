@@ -70,7 +70,72 @@ docker logs -f inv_gateway
 docker compose config      # validation only, starts nothing
 ```
 
+## Provisioning a host from scratch
+
+*Last updated: 2026-08-27.*
+
+`deploy/provision.sh` prepares a host to run the **published** image alongside
+other containers, and emits the compose file to run it with. It creates the ssh
+keys, the bastion's `data/`, the secrets and the directory layout, and it is
+safe to re-run — every step checks before it acts.
+
+```bash
+deploy/provision.sh init --clients jupyter,visualisation --tws-userid <account>
+deploy/provision.sh add-client backtester   # one more key + bastion user
+deploy/provision.sh status                  # fingerprints and what is pinned
+```
+
+Everything lands under `--root` (default `/srv/ib-gateway`, or
+`$XDG_DATA_HOME/ib-gateway` when `/srv` is not writable) — **never in the
+checkout**, so no credential is one `git add` away from a public repository.
+
+- **Nothing publishes the IB API port.** The API has no authentication of its
+  own, so reaching it must require a key rather than a route. The gateway opens
+  it on the bastion's loopback with `ssh -R`; each client forwards it back with
+  `ssh -L` under its own key. Only the bastion's ssh port is published, and on
+  `127.0.0.1` unless `--bastion-bind` says otherwise.
+- **Each key is restricted to one direction and one port**, in
+  `authorized_keys`. Both `permitopen` *and* `permitlisten` are set on every
+  key: they govern `-L` and `-R` respectively and **neither constrains the
+  other**, so a key naming only one leaves the other direction unrestricted.
+  The unused direction is pinned to `127.0.0.1:1`, which the unprivileged
+  session user can neither bind nor be forwarded to. Verified against a running
+  bastion, and pinned by `tests/unit/provision.bats`.
+- **The bastion's host key is read from the `data/` that was just provisioned**
+  and written into every `known_hosts`, so there is no first-connection window
+  to get wrong. Clients run with `StrictHostKeyChecking yes`.
+- **Credentials are files, never values.** Each is a `0600` file under
+  `secrets/`, mounted at `/run/secrets/<name>` through compose `secrets:`, and
+  named to the container with the `*_FILE` variable that `file_env` reads. The
+  emitted `.env` holds no credential at all. `file_env` errors out when both
+  `VAR` and `VAR_FILE` are set, so only the `_FILE` half is ever emitted.
+- **It refuses to provision beside the live stack.** `inv_gateway` /
+  `inv_bastion` running, or `--project inv_ibkr`, stops it: compose identifies a
+  project by name, so an emitted stack sharing that name would adopt the running
+  containers. `--force` proceeds; nothing is ever stopped either way.
+- `secrets/tws_password` is left empty when no password is given
+  interactively, and the script says so — loudly, twice. An empty secret is
+  written as a bare newline, which `file_env` reads back as the empty string,
+  so the gateway would otherwise start and fail its IB login.
+
+All three images are published, so the script pulls rather than builds. It falls
+back to building the bastion from `bastion/` when it cannot pull —
+`ghcr.io/dennisdeh` is private, so run `docker login ghcr.io` first, and a
+freshly bumped `IMAGE_VERSION` has no published tag until the next release.
+
+> **The bastion refuses to start on a `data/` provisioned before 2026-08-27.**
+> `sshd_config.d/*.conf` is now covered by the provisioning checksum — the files
+> and a listing of the directory, so an added or removed drop-in is caught too,
+> which no per-file hash can do. Data provisioned before that has no recorded
+> listing, and the container stops rather than skipping the check. Re-run
+> `deploy/provision.sh init` (or `bastion/provision.sh`) against the existing
+> `data/`; it is idempotent and keeps the host keys, so no client's
+> `known_hosts` changes.
+
 ## Provisioning the bastion `data/` directory
+
+This is what `deploy/provision.sh` drives for you; the below is the manual
+equivalent, and what the existing deployment was built with.
 
 `data/` is gitignored and must exist before the bastion starts. It is created by
 `bastion/provision.sh`, run *inside* the bastion image with `data/` bind-mounted

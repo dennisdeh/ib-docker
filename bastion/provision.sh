@@ -16,6 +16,12 @@
 
 set -e
 
+# The path is the one inside the image, which shellcheck cannot resolve from
+# the repository; the source= directive below records where it actually lives.
+# shellcheck source=bastion/sshd_config_d.sh
+# shellcheck disable=SC1091
+. /sshd_config_d.sh
+
 # set container DATA directory variable
 DATA=/data
 PROVISIONED_HASH=/etc/ssh/bastion_provisioned_hash
@@ -214,6 +220,16 @@ set_checksum() {
 	elif [ -f '/etc/ssh/user_ca.pub' ]; then
 		sha256sum /etc/ssh/user_ca.pub >>"$PROVISIONED_HASH"
 	fi
+
+	# include the drop-in directory sshd_config includes. Hashing the files
+	# catches an edit to one; hashing the listing catches a file being added
+	# or removed, which the per-file hashes cannot see. See sshd_config_d.sh.
+	mkdir -p "$SSHD_CONFIG_D"
+	sshd_config_d_list >"$SSHD_CONFIG_D_LIST"
+	chmod 644 "$SSHD_CONFIG_D_LIST"
+	sha256sum "$SSHD_CONFIG_D_LIST" >>"$PROVISIONED_HASH"
+	find "$SSHD_CONFIG_D" -mindepth 1 -maxdepth 1 -type f -print0 |
+		LC_ALL=C sort -z | xargs -0 -r sha256sum >>"$PROVISIONED_HASH"
 
 	# checksum the full file
 	sha256sum "$PROVISIONED_HASH" >"${PROVISIONED_HASH}.sum"

@@ -7,8 +7,13 @@
 
 # hadolint global ignore=DL3008
 
-ARG IB_VERSION=10.45.1g
-FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION} AS setup
+# The gateway image this stage reads from. Both halves are build args so a
+# build with nothing published yet - CI, or a clean clone - can point them at an
+# image it has just built instead of at ghcr.io, which is not anonymously
+# pullable. See docs/DECISIONS.md.
+ARG IB_GATEWAY_BASE_IMAGE=ghcr.io/dennisdeh/ib-gateway
+ARG IB_VERSION=10.45.1j
+FROM ${IB_GATEWAY_BASE_IMAGE}:${IB_VERSION} AS setup
 
 WORKDIR /
 
@@ -18,7 +23,7 @@ WORKDIR /
 
 FROM lscr.io/linuxserver/rdesktop:ubuntu-xfce
 
-ENV IB_GATEWAY_VERSION=10.45.1g
+ENV IB_GATEWAY_VERSION=10.45.1j
 ENV IB_GATEWAY_RELEASE_CHANNEL=stable
 ENV IBC_VERSION=3.24.1
 
@@ -37,17 +42,25 @@ ENV NO_AT_BRIDGE=1
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN \
-  apt-get update -y && \
-  apt-get upgrade -y && \
-  apt-get install --no-install-recommends --yes socat sshpass gettext-base \
-    libnspr4 libnss3 libcrypto++8 xdg-utils xfce4-cpugraph-plugin \
-    xfce4-netload-plugin xfce4-taskmanager xfce4-xkb-plugin xfce4-notes \
-    gvfs gvfs-backends gvfs-fuse telnet && \
+# Retried: see the same loop in Dockerfile and docs/DECISIONS.md.
+RUN for attempt in 1 2 3; do \
+    apt-get update -y && \
+    apt-get upgrade -y && \
+    apt-get install --no-install-recommends --yes socat sshpass gettext-base \
+      libnspr4 libnss3 libcrypto++8 xdg-utils xfce4-cpugraph-plugin \
+      xfce4-netload-plugin xfce4-taskmanager xfce4-xkb-plugin xfce4-notes \
+      gvfs gvfs-backends gvfs-fuse telnet && \
+    break; \
+    [ "$attempt" = 3 ] && exit 1; \
+    echo ".> apt failed, refreshing indices and retrying (attempt ${attempt})"; \
+    sleep 15; \
+  done && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* # end
 
 # Copy files
+# /usr/local carries the JRE - see the same copy in Dockerfile and
+# docs/DECISIONS.md. Without it the launcher points at a JVM that is not here.
 COPY --from=setup /usr/local/ /usr/local/
 COPY --chown=abc:abc --from=setup /home/ibgateway/Jts ${TWS_PATH}
 COPY --chown=abc:abc --from=setup /home/ibgateway/ibc ${IBC_PATH}
@@ -55,9 +68,13 @@ COPY ./tws-scripts/start_session.sh /custom-services.d/start_session.sh
 COPY ./tws-scripts/run_tws.sh ${SCRIPT_PATH}
 COPY ./scripts/* ${SCRIPT_PATH}
 
+# Fail the build if no JVM survived the copies above - see Dockerfile.
+RUN java_bin="$(find /usr/local/i4j_jres ${TWS_PATH} -name java -type f -print -quit 2>/dev/null || true)" && \
+  [ -n "${java_bin}" ] && "${java_bin}" -version
+
 # labels
-LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-gateway-docker
-LABEL org.opencontainers.image.url=https://github.com/dennisdeh/ib-gateway-docker/pkgs/container/tws-rdesktop
+LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-docker
+LABEL org.opencontainers.image.url=https://github.com/dennisdeh/ib-docker/pkgs/container/tws-rdesktop
 LABEL org.opencontainers.image.description="Docker image with XFCE, TWS & IBC"
 LABEL org.opencontainers.image.licenses="Apache License Version 2.0"
 LABEL org.opencontainers.image.version=${IB_GATEWAY_VERSION}-${IB_GATEWAY_RELEASE_CHANNEL}
