@@ -30,6 +30,7 @@ actually outstanding.
 | 23 | `.pre-commit-config.yaml` revs are pinned to 2024 and nothing updates them | Low |
 | 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium |
 | 25 | the `stable` channel has never been published: `ghcr.io/dennisdeh/ib-gateway:stable` and the TWS one do not exist | High |
+| 26 | `CA_ENABLED=yes` with no certificate files is a silent no-op that reports success | Medium |
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
 record of what changed and how it was verified.
@@ -523,6 +524,55 @@ same workflow already accepts. Either publishes all three images and both
 architectures. This is deliberately not automated further - a back-fill is a
 one-off, and making detection publish channels that have not moved would
 re-push both channels every day.
+
+### 26. `CA_ENABLED=yes` with no certificate files reports success and does nothing — **OPEN**
+
+*Found 2026-08-28, while rewriting the bastion's TOTP and CA documentation.
+Measured against `ghcr.io/dennisdeh/bastion:latest`.*
+
+`set_CA()` in `bastion/entrypoint.sh` resolves the two paths like this:
+
+```bash
+[ ! -f "$SSHD_HOST_CERT" ] && SSHD_HOST_CERT='/etc/ssh/ssh_host_ed25519_key-cert.pub'
+[ ! -f "$SSHD_USER_CA" ]   && SSHD_USER_CA='/etc/ssh/user_ca.pub'
+```
+
+Both substitutions are silent, and neither the fallback path is then checked.
+Started with `CA_ENABLED=yes` against a `data/` that has no certificate in it,
+the container prints `> SSH CA 🔏 enabled` and sshd listens normally:
+
+```text
+> SSH CA 🔏 enabled
+> Starting /usr/sbin/sshd -D -e ... -o HostCertificate=/etc/ssh/ssh_host_ed25519_key-cert.pub -o TrustedUserCAKeys=/etc/ssh/user_ca.pub
+Server listening on 0.0.0.0 port 22.
+```
+
+OpenSSH is content with that. `sshd -t` with both paths absent **exits 0**,
+warning only about the host certificate and saying nothing whatever about the
+missing `TrustedUserCAKeys`:
+
+```text
+Could not load host certificate "/etc/ssh/ssh_host_ed25519_key-cert.pub": No such file or directory
+sshd -t exit=0
+```
+
+So an operator who sets `CA_ENABLED=yes`, forgets to copy the files in — or
+mistypes `SSHD_HOST_CERT` — gets a bastion that presents no host certificate
+and trusts no user CA, with a log line saying CA is enabled. Nothing fails.
+Clients still authenticate from `authorized_keys` exactly as before, which is
+why it can go unnoticed: the bastion works, just not the way it says.
+
+**Severity is "reports success", not "lets someone in".** No access is granted
+that was not granted before; the risk is an operator believing certificate
+authentication is in force — and, if they then remove `authorized_keys` entries
+because "the CA handles it", locking everyone out, or leaving a `known_hosts`
+fingerprint check they think is redundant.
+
+**The fix is a guard, not a redesign:** when `CA_ENABLED=yes`, fail the start if
+the resolved `SSHD_HOST_CERT` or `SSHD_USER_CA` does not exist — the same shape
+as `check_totp_users()`, which already refuses to start when TOTP is on and a
+user has no enrolment. Documented meanwhile in `bastion/README.md` under *Use a
+certificate authority*.
 
 ## Low / accepted risk (record the decision if you accept it)
 
