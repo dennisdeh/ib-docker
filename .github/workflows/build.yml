@@ -15,6 +15,11 @@ on:
       channel:
         required: true
         type: string
+      ref:
+        description: 'Commit-ish to build. Empty means the ref that triggered the caller.'
+        required: false
+        type: string
+        default: ''
 
 env:
   CHANNEL: ${{ inputs.channel }}
@@ -50,6 +55,11 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # Empty checks out the caller's own ref, which is what the CI callers
+          # want. The release bots pass the bump they just pushed: building
+          # master would validate the code without the bump.
+          ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

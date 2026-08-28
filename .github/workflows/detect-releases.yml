@@ -71,6 +71,35 @@ jobs:
             echo "has_update=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Repairs a release whose asset upload only partly succeeded - the
+      # `Create release` step below uploads four files and is not atomic.
+      # Guarded on has_update being false, i.e. the release for the version IB
+      # is serving right now already exists, because IB serves only the current
+      # version per channel: for any older tag there is no source to fetch
+      # from, so a gap there cannot be repaired at all. See docs/OPEN_ITEMS.md.
+      - name: Backfill installers missing from the existing release
+        if: ${{ steps.check-update.outputs.has_update == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ matrix.channel }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
+        run: |
+          tag="ibgateway-${CHANNEL}@${BUILD_VERSION}"
+          assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+          for arch in x64 arm; do
+            dest="ibgateway-${BUILD_VERSION}-standalone-linux-${arch}.sh"
+            if grep -qxF "$dest" <<< "$assets" &&
+               grep -qxF "${dest}.sha256" <<< "$assets"; then
+              continue
+            fi
+            echo "::notice::backfilling ${arch} installer for ${tag}"
+            curl -sSLf --output "$dest" \
+              "https://download2.interactivebrokers.com/installers/ibgateway/${CHANNEL}-standalone/ibgateway-${CHANNEL}-standalone-linux-${arch}.sh"
+            sha256sum "$dest" > "${dest}.sha256"
+            gh release upload "$tag" "$dest" "${dest}.sha256" --clobber
+            rm -f "$dest" "${dest}.sha256"
+          done
+
       - name: Download
         if: ${{ steps.check-update.outputs.has_update == 'true' }}
         env:

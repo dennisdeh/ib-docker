@@ -3,8 +3,9 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-28 (twice: the summary and renumbering in the morning,
-item 13 fixed in the afternoon) — items 1-16 from the QA / adversarial QA sweep of
+*Last updated: 2026-08-28 (three times: the summary and renumbering in the
+morning, item 13 fixed in the afternoon, item 26 on merging the
+`claude/github-actions-issues` branch) — items 1-16 from the QA / adversarial QA sweep of
 2026-08-25; item 22 from wiring release detection to publication on 2026-08-26;
 items 19-21 from 2026-08-27, while writing `deploy/provision.sh` and bumping
 IBC. Reorganised on 2026-08-28: the summary below was added, and three item
@@ -523,6 +524,51 @@ same workflow already accepts. Either publishes all three images and both
 architectures. This is deliberately not automated further - a back-fill is a
 one-off, and making detection publish channels that have not moved would
 re-push both channels every day.
+
+### 26. `detect-ibc-release.yml` could not see its own bump branch — **FIXED**
+
+*2026-08-28, merging the `claude/github-actions-issues` branch.* Four defects in
+the daily IBC check, each of which fails silently:
+
+- **`verify_branch` never matched.** It tested `git branch -r --list | grep
+  origin/<branch>`, but `actions/checkout` fetches a single branch at a shallow
+  depth, so no `origin/IBC-update-*` ref exists locally however many times one
+  has been pushed. The step reported `BRANCH_EXISTS=false` every day and
+  `gh pr create` then failed on the pull request that was already open. It now
+  asks the remote with `git ls-remote --exit-code --heads`, and still falls back
+  to the open-PR check for a branch deleted with its PR left open. This is the
+  same stale-branch mechanism as #21, from the other side.
+- **The upstream version came from a human-facing table.** `gh release list |
+  grep 'Latest' | cut -f1` matches the word `Latest` in any column, a release
+  title included, and takes a positional field. Replaced with `gh api
+  repos/<repo>/releases/latest --jq .tag_name`, which is defined as the latest
+  published non-draft, non-prerelease.
+- **An empty or unexpected value was used rather than refused.** A transient API
+  failure read as "there is a new version called nothing" and reached a branch
+  name `IBC-update-` and `IBC_VERSION=` in both templates. Both the pinned and
+  the upstream version are now checked against `VERSION_PATTERN` before use —
+  the same treatment IB's `buildVersion` already gets in `detect-releases.yml`,
+  and for the same reason: the value reaches a branch name, two `sed` patterns,
+  a download URL and a `git push`.
+- **A downgrade would have opened a PR.** A plain `!=` also fires when upstream's
+  latest resolves to something *older* — a re-tag, or a newer release un-marked
+  as latest. The comparison is now `sort -V`, which also orders `3.9` before
+  `3.10` where a string compare does not.
+
+Two smaller ones with it: the `sed` rewrites of both templates are now confirmed
+with `grep -q` (`sed` exits 0 whether or not it matched, so a bump could land in
+one template and silently skip the other, which is also now checked up front),
+and the branch push dropped `--force`, which was only ever masking the broken
+existence check.
+
+The `build` job below them is gated on a branch having actually been created and
+passes `ref:` so it builds the bump rather than `master` — building `master`
+validated the code *without* the change. `build.yml` gained that optional `ref`
+input, defaulting to empty, which is what the CI callers want.
+
+**Not verified end to end**, and it cannot be from here: it needs GitHub-hosted
+runners, `gh` and a real IBC release. `tests/unit/workflows.bats` covers the
+wiring offline.
 
 ## Low / accepted risk (record the decision if you accept it)
 
