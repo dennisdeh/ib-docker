@@ -24,10 +24,16 @@ run_unit() {
 run_container() {
 	echo ".> container tests"
 	docker build -q -t "$RUNNER_IMAGE" tests/ >/dev/null
+	# Both image overrides are forwarded. BASTION_IMAGE is documented by
+	# tests/container/bastion_*.bats as the way to test an image other than
+	# ghcr.io/dennisdeh/bastion:latest, but it was not passed in, so setting it
+	# on the host did nothing and the suite silently tested the published image
+	# instead of the one just built. Found 2026-08-28.
 	docker run --rm \
 		-v "$PWD:/code" -w /code \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-e IB_GATEWAY_IMAGE \
+		-e BASTION_IMAGE \
 		"$RUNNER_IMAGE" tests/container
 }
 

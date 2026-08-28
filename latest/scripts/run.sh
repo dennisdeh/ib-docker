@@ -61,8 +61,17 @@ start_vnc() {
 	file_env 'VNC_SERVER_PASSWORD'
 	if [ -n "$VNC_SERVER_PASSWORD" ]; then
 		echo ".> Starting VNC server"
-		x11vnc -ncache_cr -display $DISPLAY -forever -shared -bg -noipv6 \
-			-passwd "$VNC_SERVER_PASSWORD" &
+		# Not -passwd: that puts the password in the process list, where
+		# anything able to read /proc can see it - x11vnc's own help says so.
+		# -passwdfile takes it from the first line of a file, and the "rm:"
+		# prefix makes x11vnc delete that file once it has read it, so the
+		# password is neither in argv nor left on disk. See OPEN_ITEMS.md #10.
+		_vnc_pwfile="$(mktemp)"
+		chmod 600 "$_vnc_pwfile"
+		printf '%s\n' "$VNC_SERVER_PASSWORD" >"$_vnc_pwfile"
+		x11vnc -ncache_cr -display "$DISPLAY" -forever -shared -bg -noipv6 \
+			-passwdfile "rm:${_vnc_pwfile}" &
+		unset _vnc_pwfile
 		unset_env 'VNC_SERVER_PASSWORD'
 	else
 		echo ".> VNC server disabled"

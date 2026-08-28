@@ -19,18 +19,18 @@ actually outstanding.
 
 ## Still open, as of 2026-08-28
 
-| # | item | where |
-|---|---|---|
-| 9 | the container user can `sudo` to root without a password | Low |
-| 10 | `x11vnc` takes its password on the command line | Low |
-| 11 | the TWS image's default RDP password is `abc` | Low |
-| 12 | `run_ssh.sh` re-parses operator-supplied env values through a shell | Low |
-| 14 | `PWD` is defined inside `.env` | Low |
-| 15 | `PORT_HOST_SSH_BASTION` in `.env` is referenced by nothing | Low |
-| 16 | a local `docker compose build --pull tws` still needs a manual `docker tag` — CI is fixed | Medium |
-| 23 | `.pre-commit-config.yaml` revs are pinned to 2024 and nothing updates them | Low |
-| 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium |
-| 26 | `CA_ENABLED=yes` with no certificate files is a silent no-op that reports success | Medium |
+| # | item | where | why it is still here |
+|---|---|---|---|
+| 9 | the container user can `sudo` to root without a password | Low | Removing it would break `START_SCRIPTS`/`X_SCRIPTS`/`IBC_SCRIPTS`, which exist so operators can install things at start-up and are documented as doing so. There is no privilege boundary inside the container to defend once arbitrary mounted shell runs in it, so this buys little and breaks a published feature. Needs a decision about that feature, not a patch. |
+| 14 | `PWD` is defined inside `.env` | Low | Compose reads `.env` from the project directory but does not set `PWD` from it, so the bind mounts need the value written down. Removing it means changing every mount to a relative path, which changes behaviour for anyone running compose from elsewhere. Worth doing deliberately, not as a drive-by. |
+| 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium | The cause is upstream: Canonical publishes an index before the `ports.ubuntu.com` pool has the package. The retry loop already turns it from a failed release into a slower one. Curing it means pinning or mirroring the archive, which is a much larger change than the fault deserves. |
+
+Fixed on 2026-08-29, each with a test shown red against the unfixed code:
+**#10** (VNC password out of the process list), **#11** (the public RDP default
+is now announced), **#12** (no shell re-parse of operator values), **#15** (the
+dead `.env` key, and a check that no key is dead), **#23** (hook revisions),
+**#26** (`CA_ENABLED` refuses to be a no-op). **#16** moved to
+`DECISIONS.md` #30 — the part that remains is by design.
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
 record of what changed and how it was verified.
@@ -225,8 +225,16 @@ resolves to `inv_gateway`/`inv_bastion` on ports 9899/9898/9897 and bastion
 ### 16. `docker compose build --pull tws` cannot work on a clean machine — **FIXED**
 
 *Found 2026-08-25, while verifying the merged compose file. Not caused by that
-merge — it predates it. **CI half fixed 2026-08-26**; the local build is still
-open, so the workaround below is still the one to use here.*
+merge — it predates it. **CI half fixed 2026-08-26**; the local build was fixed
+the day before that, and re-verified on 2026-08-29 by building the tws `setup`
+stage on its own — it resolved against the image `docker compose build
+ib-gateway` had just produced, with no `docker tag` and no registry access.*
+
+*What cannot be made to work is `--pull` on the tws build, and that is not a
+defect: `--pull` means "fetch the base from the registry every time" and the
+base is private. Use `docker compose build ib-gateway` then `docker compose
+build tws`, without `--pull` on the second. Moved to `DECISIONS.md` #30 so it
+stops reading as outstanding work.*
 
 `Dockerfile.tws` starts `FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION}` with
 `IB_VERSION` defaulting to the channel's gateway version, so the TWS build needs
@@ -546,7 +554,7 @@ untouched - `ib-gateway:latest` still resolves to `10.50.1e`'s digest.
 detection publish channels that have not moved would re-push both channels
 every day. The next `stable` release publishes itself.
 
-### 26. `CA_ENABLED=yes` with no certificate files reports success and does nothing — **OPEN**
+### 26. `CA_ENABLED=yes` with no certificate files reports success and does nothing — **FIXED 2026-08-29**
 
 *Found 2026-08-28, while rewriting the bastion's TOTP and CA documentation.
 Measured against `ghcr.io/dennisdeh/bastion:latest`.*
@@ -589,11 +597,19 @@ authentication is in force — and, if they then remove `authorized_keys` entrie
 because "the CA handles it", locking everyone out, or leaving a `known_hosts`
 fingerprint check they think is redundant.
 
-**The fix is a guard, not a redesign:** when `CA_ENABLED=yes`, fail the start if
-the resolved `SSHD_HOST_CERT` or `SSHD_USER_CA` does not exist — the same shape
-as `check_totp_users()`, which already refuses to start when TOTP is on and a
-user has no enrolment. Documented meanwhile in `bastion/README.md` under *Use a
-certificate authority*.
+**FIXED 2026-08-29 with that guard**, shaped like `check_totp_users()`.
+`set_CA()` now refuses to start when a path the operator *named* does not
+exist — a typo is no longer swallowed by the fallback — and when `CA_ENABLED`
+is on but neither a host certificate nor a user CA is present anywhere, since
+enabling it would then change nothing.
+
+The two halves stay independent, which is the false positive that had to be
+avoided: a host certificate frees clients from `known_hosts` and a user CA
+frees this host from `authorized_keys`, so either **alone** is a valid setup
+and still starts, with a warning naming the half that is absent.
+`tests/container/bastion_ca.bats` covers all five cases, including that
+last one, and every one of them was run against both the fixed and the
+published (unfixed) image — the four new assertions fail against the latter.
 
 ### 27. `detect-ibc-release.yml` could not see its own bump branch — **FIXED**
 
@@ -645,12 +661,12 @@ wiring offline.
 | # | item | note |
 |---|---|---|
 | 9 | `echo "ibgateway ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers` in `Dockerfile.template` | The unprivileged container user can become root at will. With `START_SCRIPTS`/`X_SCRIPTS`/`IBC_SCRIPTS` executing arbitrary mounted shell, there is no privilege boundary inside the container. Inherited from upstream. |
-| 10 | `x11vnc … -passwd "$VNC_SERVER_PASSWORD"` in `run.sh` | Password visible in the container's process list; `-passwdfile`/`-rfbauth` avoid it. VNC auth is weak by design (8 effective chars). Mitigated by the `127.0.0.1` publish. |
-| 11 | TWS image default RDP password is `abc` (`${PASSWD:-abc}` in `start_session.sh`) | Safe only because the `tws` service in `docker-compose.yml` binds RDP to `127.0.0.1`. Anyone publishing 3389 more widely inherits a known password. |
-| 12 | `run_ssh.sh` runs `bash -c "ssh ${_OPTIONS} … ${_USER_TUNNEL}"` | Re-parses operator-supplied env values through a shell. Not a vulnerability (operator-controlled) but any metacharacter executes. |
+| 10 | `x11vnc … -passwd "$VNC_SERVER_PASSWORD"` in `run.sh` — **FIXED 2026-08-29** | The password was in argv, where anything able to read `/proc` could see it; x11vnc's own `-help` says exactly that about `-passwd` and points at `-passwdfile`. `start_vnc()` now writes it to a `0600` file and passes `-passwdfile rm:<file>`, the `rm:` prefix making x11vnc delete the file once it has read it — so it is neither in the process list nor left on disk. Confirmed the flag and the prefix against the published image before relying on them. `tests/unit/credentials.bats` runs the real `start_vnc` against a stub `x11vnc` and fails if the password appears in argv; shown red against `-passwd`. |
+| 11 | TWS image default RDP password is `abc` (`${PASSWD:-abc}` in `start_session.sh`) — **FIXED 2026-08-29, by saying so** | Still `abc`: changing the default breaks every deployment relying on it, and the image cannot see which interface the host published 3389 on. It now prints a five-line warning at every start when `PASSWD` is unset, naming the risk and the `127.0.0.1` assumption that makes it tolerable. `tests/unit/credentials.bats` asserts the warning appears without `PASSWD`, does not appear with it, and that the password actually set is unchanged either way. |
+| 12 | `run_ssh.sh` runs `bash -c "ssh ${_OPTIONS} … ${_USER_TUNNEL}"` — **FIXED 2026-08-29** | `SSH_OPTIONS` and `SSH_SCREEN` each carry several arguments in one variable and still have to be split, but only into words: `read -ra` does that and stops there, and the destination is passed as a single argument. Never a way in from outside — the values are operator-controlled — but a password with a backtick in it would have executed rather than failed to connect. `tests/unit/run_ssh.bats` gained three tests: a metacharacter in the destination does not run, a `$(...)` in the options does not run, and multi-word options still split into separate argv entries. The first two were shown red against the `bash -c` line. |
 | 13 | Dependabot watched `/stable` and `/latest` only — **FIXED 2026-08-28** | Those are *generated*: a base-image bump landed there is overwritten by the next `update.sh`, so it looked like coverage and was churn, while the real sources went unwatched. The docker ecosystem now uses `directories:` and names `/` (which reaches `Dockerfile.template` and `Dockerfile.tws.template` — Dependabot matches any file name containing `dockerfile` or `containerfile`, case-insensitively and unanchored), `/bastion` and `/tests`. `tests/unit/images.bats` fails if a directory holding a Dockerfile is missing from that list, or if a generated one reappears in it. The floating tag `lscr.io/linuxserver/rdesktop:ubuntu-xfce` is now watched with the rest. |
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
-| 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere | The bastion actually publishes `SSH_LISTEN_PORT=22222` on **0.0.0.0** — every other port here is pinned to `127.0.0.1`. Reachability is the point of a bastion, but a firewall rule written for 2222 protects nothing. |
-| 23 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them (numbered 18 until 2026-08-28, which the `arm` release-asset item already used) | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
+| 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere — **FIXED** | The key is gone, and `.env-dist` now says in the bastion block that `SSH_LISTEN_PORT` is published on **all** host interfaces — unlike every other port here, which is pinned to `127.0.0.1` — and that this is the point of a bastion but should still be firewalled deliberately. `tests/unit/compose.bats` now fails on any key in `.env-dist` that nothing reads, so a dead knob cannot come back: a key here is a promise that setting it does something. Shown red by re-adding this exact key. |
+| 23 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them — **FIXED 2026-08-29** (numbered 18 until 2026-08-28, which the `arm` release-asset item already used) | `pre-commit autoupdate` moved five of the six: `pre-commit-hooks` v4.6.0→v6.0.0, `shellcheck` v0.10.0→v0.11.0, `shfmt` v3.12.0-1→v3.13.1-1, `hadolint` v2.12.1-beta→v2.15.1, `markdownlint-cli` v0.39.0→v0.49.1; `dotenv-linter` was current. Every hook passes at the new revisions, with one rule turned off: `MD060` arrived in markdownlint 0.49 and fires 228 times on table-pipe padding in the generated README — see `DECISIONS.md` #31. Dependabot still has no `pre-commit` ecosystem, so this stays a manual `autoupdate`; the point of the item was that the revisions had gone stale, not that a bot must do it. |
 | 19 | The bastion image is published nowhere — **FIXED 2026-08-27** | It was built from `bastion/` and tagged `dennisdeh/bastion:local-resolute`, so `deploy/provision.sh` needed a checkout to build one of the three images. `publish.yml` now pushes `ghcr.io/dennisdeh/bastion`, tagged with the `ARG IMAGE_VERSION` the bastion's own Dockerfile declares, and `provision.sh` pulls it and only falls back to building. `build.yml` builds it too, so a break fails the PR check rather than a release. |
 | 20 | `sshd_config.d/*.conf` is included but not covered by the provisioning hash — **FIXED 2026-08-27** | `bastion/sshd_config` opens with `Include /etc/ssh/sshd_config.d/*.conf`, and `set_checksum()` hashed `sshd_config` and the host keys but nothing from that directory, so a drop-in could set `PermitRootLogin` or widen `AllowTcpForwarding` while `check_provision()` still reported a valid checksum. Confirmed against the unfixed image: adding, editing **and** removing a drop-in all started normally. `set_checksum()` now hashes those files *and* a recorded listing of the directory — the files alone cannot catch an addition or a removal, since every recorded line still checks out — and `check_sshd_config_d()` in `entrypoint.sh` compares the listing before sshd starts. Pinned by `tests/container/bastion_hash.bats`. **Upgrading the image requires re-provisioning `data/`**: the container refuses to start on data provisioned before this, rather than skipping the check. |

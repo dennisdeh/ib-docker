@@ -269,14 +269,15 @@ python3 -m venv .venv && .venv/bin/pip install pre-commit   # once
 .venv/bin/pre-commit run --all-files
 ```
 
-Verified green tree-wide on 2026-08-25 — all twelve hooks. If you cannot install
+Verified green tree-wide on 2026-08-29, at the revisions `pre-commit
+autoupdate` set that day — all twelve hooks. If you cannot install
 `pre-commit`, these equivalents were verified clean the same day:
 
 ```bash
 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable \
   image-files/scripts/*.sh image-files/tws-scripts/*.sh update.sh
 docker run --rm -v "$PWD:/work" -w /work mvdan/shfmt:latest -d image-files/ update.sh
-docker run --rm -i hadolint/hadolint:v2.12.1-beta hadolint - < Dockerfile.template
+docker run --rm -i hadolint/hadolint:v2.15.1 hadolint - < Dockerfile.template
 docker run --rm -v "$PWD:/workdir" -w /workdir davidanson/markdownlint-cli2:latest \
   CONTRIBUTING.md template_README.md
 ```
@@ -361,7 +362,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 97 tests as of 2026-08-28.
+  container, no network, no credentials. 106 tests as of 2026-08-29.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,
@@ -374,8 +375,10 @@ tests/run.sh all
   means it can never generate a failed login against the account.
   `bastion_hash.bats` provisions a throwaway `data/`, tampers with
   `sshd_config.d` and asserts the bastion refuses to start; set `BASTION_IMAGE`
-  to test an image other than `ghcr.io/dennisdeh/bastion:latest`. 8 tests as of
-  2026-08-28, and **not run in CI** — see `DECISIONS.md` #11.
+  to test an image other than `ghcr.io/dennisdeh/bastion:latest` — `tests/run.sh`
+  forwards that variable, which it did not until 2026-08-29, so setting it used
+  to do nothing and the suite silently tested the published image. 13 tests as
+  of 2026-08-29, and **not run in CI** — see `DECISIONS.md` #11.
 - Nothing in the suite touches `inv_gateway`/`inv_bastion`.
 
 ### 5. Links in the documentation

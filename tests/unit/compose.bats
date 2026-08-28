@@ -96,3 +96,26 @@ port_vars() {
 		}
 	done
 }
+
+@test "env: every key in .env-dist is read by something" {
+	# PORT_HOST_SSH_BASTION=2222 sat here for months naming a port nothing
+	# published - the bastion publishes SSH_LISTEN_PORT - so a firewall rule
+	# written against it protected nothing. A key here is a promise that
+	# setting it does something. See docs/OPEN_ITEMS.md #15.
+	local key dead=''
+	while read -r key; do
+		grep -rq "$key" \
+			"${ROOT}/docker-compose.yml" \
+			"${ROOT}/bastion/docker-compose.yml" \
+			"${ROOT}/deploy/provision.sh" \
+			"${ROOT}/image-files" \
+			"${ROOT}/.github/workflows" 2>/dev/null || dead="${dead} ${key}"
+	done < <(grep -oE '^[A-Z_][A-Z0-9_]*=' "$ENV_DIST" | tr -d '=')
+
+	[ -z "$dead" ] || {
+		echo "these keys in .env-dist are read by nothing:${dead}"
+		echo "wire them up, or delete them - a key that does nothing is worse"
+		echo "than no key, because it reads as configuration that works."
+		return 1
+	}
+}

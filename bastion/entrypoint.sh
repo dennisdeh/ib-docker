@@ -153,21 +153,67 @@ set_CA() {
 	#
 	# set CA parameters in SSHD_OPT variable
 	#
-	if [ "$CA_ENABLED" == "yes" ]; then
-		declare -a SSHD_CA
-		# set host certificate
-		[ ! -f "$SSHD_HOST_CERT" ] && SSHD_HOST_CERT='/etc/ssh/ssh_host_ed25519_key-cert.pub'
-		SSHD_CA+=("-o HostCertificate=$SSHD_HOST_CERT")
-		# set user CA public key
-		[ ! -f "$SSHD_USER_CA" ] && SSHD_USER_CA='/etc/ssh/user_ca.pub'
-		SSHD_CA+=("-o TrustedUserCAKeys=$SSHD_USER_CA")
-
-		# add to SSHD options
-		SSHD_OPT+=("${SSHD_CA[@]}")
-		echo "> SSH CA 🔏 enabled"
-	else
+	# The two halves are independent: a host certificate frees clients from
+	# known_hosts, a user CA frees this host from authorized_keys. Either alone
+	# is a valid setup, so a missing one is a warning - but CA_ENABLED with
+	# neither is not, and a path the operator named and misspelled is not
+	# either. Both used to fall back to the default in silence, and the default
+	# was never checked, so sshd started, logged "enabled" and trusted nothing;
+	# `sshd -t` exits 0 in that state. See docs/OPEN_ITEMS.md #26.
+	if [ "$CA_ENABLED" != "yes" ]; then
 		echo "> SSH CA 🔏 disabled"
+		return 0
 	fi
+
+	local host_cert="${SSHD_HOST_CERT:-}" user_ca="${SSHD_USER_CA:-}"
+	local failed=0
+
+	if [ -n "$host_cert" ] && [ ! -f "$host_cert" ]; then
+		echo "> ERROR: SSHD_HOST_CERT='${host_cert}' does not exist"
+		failed=1
+	fi
+	if [ -n "$user_ca" ] && [ ! -f "$user_ca" ]; then
+		echo "> ERROR: SSHD_USER_CA='${user_ca}' does not exist"
+		failed=1
+	fi
+	if [ "$failed" -ne 0 ]; then
+		echo "> Copy the file into data/etc/ssh and re-run the provisioning"
+		echo "> script, or unset the variable to use the default path."
+		echo "> SSH CA validation failed. Refusing to start."
+		exit 1
+	fi
+
+	[ -n "$host_cert" ] || host_cert='/etc/ssh/ssh_host_ed25519_key-cert.pub'
+	[ -n "$user_ca" ] || user_ca='/etc/ssh/user_ca.pub'
+
+	declare -a SSHD_CA
+	local configured=0
+	if [ -f "$host_cert" ]; then
+		SSHD_CA+=("-o HostCertificate=$host_cert")
+		configured=1
+	else
+		echo "> WARNING: no host certificate at ${host_cert};"
+		echo "> WARNING: clients still need this host in known_hosts."
+	fi
+	if [ -f "$user_ca" ]; then
+		SSHD_CA+=("-o TrustedUserCAKeys=$user_ca")
+		configured=1
+	else
+		echo "> WARNING: no user CA at ${user_ca};"
+		echo "> WARNING: users are still authenticated from authorized_keys."
+	fi
+
+	if [ "$configured" -eq 0 ]; then
+		echo "> ERROR: CA_ENABLED=yes but neither a host certificate nor a user"
+		echo "> CA is present, so enabling it would change nothing. Copy them"
+		echo "> into data/etc/ssh before provisioning, or set CA_ENABLED=no."
+		echo "> SSH CA validation failed. Refusing to start."
+		exit 1
+	fi
+
+	# add to SSHD OPTIONS
+	SSHD_OPT+=("${SSHD_CA[@]}")
+	echo "> SSH CA 🔏 enabled"
 }
 
 commmon_start() {

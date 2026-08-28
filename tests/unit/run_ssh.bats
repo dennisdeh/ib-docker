@@ -59,3 +59,65 @@ tunnel_args() {
 	[[ $output == *"-o ServerAliveInterval=20"* ]]
 	[[ $output == *"ibgateway@bastion"* ]]
 }
+
+# Every value below reaches ssh from the environment, and the loop used to
+# assemble them into one string and hand it to `bash -c`. That re-parsed all of
+# them: a semicolon, a backtick or a $(...) in SSH_OPTIONS, SSH_SCREEN or
+# SSH_USER_TUNNEL ran as a command. They are operator-controlled, so this was
+# never a way in from outside - but a password with a backtick in it, pasted
+# into SSH_USER_TUNNEL, would have executed rather than failed to connect.
+# See docs/OPEN_ITEMS.md #12.
+
+# Like tunnel_args, but records one argument per line so a value that should
+# have stayed whole can be told from one that was split.
+tunnel_argv() {
+	cat >"$TMP/ssh" <<-'STUB'
+		#!/bin/sh
+		printf '%s\n' "$@" >>"$SSH_ARGS_FILE"
+	STUB
+	chmod +x "$TMP/ssh"
+	PATH="$TMP:$PATH" \
+		SSH_ALL_OPTIONS="${2:--o ServerAliveInterval=20}" \
+		SSH_SCREEN="${3:-}" \
+		SSH_USER_TUNNEL="$1" \
+		SSH_RESTART=30 \
+		API_PORT=4002 \
+		SSH_REMOTE_PORT=4002 \
+		timeout 5 bash "$RUN_SSH" >/dev/null 2>&1 || true
+	cat "$SSH_ARGS_FILE"
+}
+
+@test "run_ssh: a metacharacter in the destination does not run" {
+	local marker="$TMP/pwned"
+	run tunnel_argv "ibgateway@bastion; touch ${marker}"
+	[ ! -e "$marker" ] || {
+		echo "the destination was re-parsed by a shell and executed"
+		return 1
+	}
+	# and it reached ssh whole, as one argument
+	[[ $output == *"ibgateway@bastion; touch ${marker}"* ]]
+}
+
+@test "run_ssh: a command substitution in the ssh options does not run" {
+	local marker="$TMP/pwned_opts"
+	run tunnel_argv "ibgateway@bastion" "-o ServerAliveInterval=20 \$(touch ${marker})"
+	[ ! -e "$marker" ] || {
+		echo "SSH_OPTIONS was re-parsed by a shell and executed"
+		return 1
+	}
+}
+
+@test "run_ssh: multi-word options and screen forwards still split into argv" {
+	# The other half of the fix: these carry several arguments in one variable
+	# and must still be split on whitespace, or every option would reach ssh as
+	# a single unusable word.
+	run tunnel_argv "ibgateway@bastion" \
+		"-o ServerAliveInterval=20 -o ServerAliveCountMax=3" \
+		"-R 127.0.0.1:5900:localhost:5900"
+	[[ $output == *"-o"* ]]
+	[[ $output == *"ServerAliveInterval=20"* ]]
+	[[ $output == *"ServerAliveCountMax=3"* ]]
+	[[ $output == *"127.0.0.1:5900:localhost:5900"* ]]
+	# each on its own line - i.e. separate arguments, not one blob
+	[ "$(grep -c '^-o$' <<<"$output")" -ge 2 ]
+}

@@ -110,6 +110,14 @@ def check_url(url, attempts=2, timeout=40):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return url, r.status, ""
         except urllib.error.HTTPError as e:
+            # 429 is the server declining to answer this checker, not a
+            # verdict on the link. news.ycombinator.com returns it after a
+            # couple of runs and 200 on the next - measured 2026-08-29 - so
+            # back off and try once more before reporting it.
+            if e.code == 429 and attempt + 1 < attempts:
+                err = "429"
+                time.sleep(10)
+                continue
             return url, e.code, ""
         except Exception as e:                   # DNS, TLS, timeout
             err = type(e).__name__
@@ -200,12 +208,26 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if code != 200:
             bad.append((code, err, url, source_urls[url]))
 
+# A link that answered 429 twice is one this checker was throttled out of,
+# which is not evidence either way. Report it, but do not fail on it - a check
+# that cries wolf is one people stop reading.
+throttled = [b for b in bad if b[0] == 429]
+bad = [b for b in bad if b[0] != 429]
+
 if not bad:
     print("URLs: all 200 (markdown links, code blocks and source files)")
 else:
     print("URLs NOT 200")
     for code, err, url, where in sorted(bad, key=lambda x: -x[0]):
         print(f"  {code or err:<6} {url}")
+        for w in sorted(set(where)):
+            print(f"         in {w}")
+
+if throttled:
+    print()
+    print("rate-limited, not checked (429 twice; not counted as failures)")
+    for code, err, url, where in throttled:
+        print(f"  {url}")
         for w in sorted(set(where)):
             print(f"         in {w}")
 

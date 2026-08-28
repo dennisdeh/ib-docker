@@ -11,6 +11,13 @@ source "${SCRIPT_PATH}/common.sh"
 
 # set user pass
 file_env 'PASSWD'
+if [ -z "${PASSWD:-}" ]; then
+	echo ".> WARNING: PASSWD is not set, so the RDP account 'abc' keeps the"
+	echo ".> WARNING: linuxserver default password 'abc', which is public."
+	echo ".> WARNING: That is only safe while RDP is published on 127.0.0.1,"
+	echo ".> WARNING: as the sample docker-compose.yml does. Set PASSWD or"
+	echo ".> WARNING: PASSWD_FILE before exposing 3389 on any other interface."
+fi
 _PASS=${PASSWD:-abc}
 echo ".> Setting user password"
 echo "abc:$_PASS" | chpasswd
