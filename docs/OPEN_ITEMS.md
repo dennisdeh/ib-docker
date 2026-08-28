@@ -3,9 +3,9 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-28 (three times: the summary and renumbering in the
-morning, item 13 fixed in the afternoon, item 26 on merging the
-`claude/github-actions-issues` branch) — items 1-16 from the QA / adversarial QA sweep of
+*Last updated: 2026-08-28 — the summary and renumbering, then items 13 and 25
+fixed, item 26 found, and item 27 fixed by merging the
+`claude/github-actions-issues` branch, over the course of that day. Items 1-16 come from the QA / adversarial QA sweep of
 2026-08-25; item 22 from wiring release detection to publication on 2026-08-26;
 items 19-21 from 2026-08-27, while writing `deploy/provision.sh` and bumping
 IBC. Reorganised on 2026-08-28: the summary below was added, and three item
@@ -30,7 +30,7 @@ actually outstanding.
 | 16 | a local `docker compose build --pull tws` still needs a manual `docker tag` — CI is fixed | Medium |
 | 23 | `.pre-commit-config.yaml` revs are pinned to 2024 and nothing updates them | Low |
 | 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium |
-| 25 | the `stable` channel has never been published: `ghcr.io/dennisdeh/ib-gateway:stable` and the TWS one do not exist | High |
+| 26 | `CA_ENABLED=yes` with no certificate files is a silent no-op that reports success | Medium |
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
 record of what changed and how it was verified.
@@ -479,7 +479,7 @@ pins the version↔digest pairing offline — two files pinning the same IBC
 version must pin the same digest, and two pinning different versions must not,
 which is precisely the shape of this bug. Shown red against the merged state.
 
-### 25. The `stable` channel has never been published — **OPEN**
+### 25. The `stable` channel had never been published — **FIXED**
 
 *Found 2026-08-28, while auditing that every image the project needs is one it
 produces.*
@@ -517,15 +517,85 @@ Until then the gap is user-visible, not cosmetic:
 - `Dockerfile.tws` opens `FROM ghcr.io/dennisdeh/ib-gateway:<version>`, so the
   TWS image for `stable` cannot be built from the registry either.
 
-**The fix is one run, not a patch:** `publish.yml` by `workflow_dispatch` with
-channel `stable` and the version left blank, which reads it from
-`stable/Dockerfile`; or a `v10.45.1j-stable` tag, which is the by-hand path the
-same workflow already accepts. Either publishes all three images and both
-architectures. This is deliberately not automated further - a back-fill is a
-one-off, and making detection publish channels that have not moved would
-re-push both channels every day.
+**FIXED 2026-08-28** by pushing `v10.45.1j-stable`, the by-hand release path
+`publish.yml` already accepts. Before pushing, that workflow's own channel and
+version resolution was run against the tag offline - channel `stable`, version
+`10.45.1j`, minor `10.45`, and the guard that refuses to tag an image with a
+version it does not contain agreed with `stable/Dockerfile` - and all four
+installer assets plus `IBCLinux-3.24.1.zip` were confirmed to return 200, so
+the `arm64` leg could not 404 half an hour in.
 
-### 26. `detect-ibc-release.yml` could not see its own bump branch — **FIXED**
+Measured after the run:
+
+```text
+ib-gateway   :stable = :10.45.1j = :10.45   sha256:c3b06296...  [amd64 arm64]
+tws-rdesktop :stable = :10.45.1j = :10.45   sha256:b3e8eeb3...  [amd64 arm64]
+bastion      :latest = :2604.01             sha256:f26cd50e...  [amd64 arm64]
+```
+
+The channel tag and both version tags resolve to one image in each case. The
+images carry `ENV IB_GATEWAY_VERSION=10.45.1j`, so the tags describe what is
+inside them, and `org.opencontainers.image.revision` records `9747d604`, the
+commit they were built from. `tws-rdesktop:stable` carries
+`ENV IBC_VERSION=3.24.1`, which independently confirms the per-channel IBC
+reporting added the same day (`DECISIONS.md` #26): stable does ship 3.24.1
+while latest ships 3.24.2, and the README now says so. The `latest` channel was
+untouched - `ib-gateway:latest` still resolves to `10.50.1e`'s digest.
+
+**Not automated further, deliberately.** A back-fill is a one-off; making
+detection publish channels that have not moved would re-push both channels
+every day. The next `stable` release publishes itself.
+
+### 26. `CA_ENABLED=yes` with no certificate files reports success and does nothing — **OPEN**
+
+*Found 2026-08-28, while rewriting the bastion's TOTP and CA documentation.
+Measured against `ghcr.io/dennisdeh/bastion:latest`.*
+
+`set_CA()` in `bastion/entrypoint.sh` resolves the two paths like this:
+
+```bash
+[ ! -f "$SSHD_HOST_CERT" ] && SSHD_HOST_CERT='/etc/ssh/ssh_host_ed25519_key-cert.pub'
+[ ! -f "$SSHD_USER_CA" ]   && SSHD_USER_CA='/etc/ssh/user_ca.pub'
+```
+
+Both substitutions are silent, and neither the fallback path is then checked.
+Started with `CA_ENABLED=yes` against a `data/` that has no certificate in it,
+the container prints `> SSH CA 🔏 enabled` and sshd listens normally:
+
+```text
+> SSH CA 🔏 enabled
+> Starting /usr/sbin/sshd -D -e ... -o HostCertificate=/etc/ssh/ssh_host_ed25519_key-cert.pub -o TrustedUserCAKeys=/etc/ssh/user_ca.pub
+Server listening on 0.0.0.0 port 22.
+```
+
+OpenSSH is content with that. `sshd -t` with both paths absent **exits 0**,
+warning only about the host certificate and saying nothing whatever about the
+missing `TrustedUserCAKeys`:
+
+```text
+Could not load host certificate "/etc/ssh/ssh_host_ed25519_key-cert.pub": No such file or directory
+sshd -t exit=0
+```
+
+So an operator who sets `CA_ENABLED=yes`, forgets to copy the files in — or
+mistypes `SSHD_HOST_CERT` — gets a bastion that presents no host certificate
+and trusts no user CA, with a log line saying CA is enabled. Nothing fails.
+Clients still authenticate from `authorized_keys` exactly as before, which is
+why it can go unnoticed: the bastion works, just not the way it says.
+
+**Severity is "reports success", not "lets someone in".** No access is granted
+that was not granted before; the risk is an operator believing certificate
+authentication is in force — and, if they then remove `authorized_keys` entries
+because "the CA handles it", locking everyone out, or leaving a `known_hosts`
+fingerprint check they think is redundant.
+
+**The fix is a guard, not a redesign:** when `CA_ENABLED=yes`, fail the start if
+the resolved `SSHD_HOST_CERT` or `SSHD_USER_CA` does not exist — the same shape
+as `check_totp_users()`, which already refuses to start when TOTP is on and a
+user has no enrolment. Documented meanwhile in `bastion/README.md` under *Use a
+certificate authority*.
+
+### 27. `detect-ibc-release.yml` could not see its own bump branch — **FIXED**
 
 *2026-08-28, merging the `claude/github-actions-issues` branch.* Four defects in
 the daily IBC check, each of which fails silently:

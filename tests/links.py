@@ -24,6 +24,7 @@ import concurrent.futures
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -93,18 +94,28 @@ def urls_in_source(path):
     return out
 
 
-def check_url(url):
+# A connection-level failure is retried once; an HTTP status is not. Some hosts
+# are simply slow to answer a cold connection - manpages.ubuntu.com took 38s on
+# the first request and under 3s on the fourth, measured 2026-08-28 - and a
+# checker that reports those as broken links is one people learn to ignore. A
+# 404 is a 404 on the first try, so it is returned straight away.
+def check_url(url, attempts=2, timeout=40):
     req = urllib.request.Request(
         url, method="GET",
         headers={"User-Agent": "Mozilla/5.0 (link-check)"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            return url, r.status, ""
-    except urllib.error.HTTPError as e:
-        return url, e.code, ""
-    except Exception as e:                       # DNS, TLS, timeout
-        return url, 0, type(e).__name__
+    err = ""
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return url, r.status, ""
+        except urllib.error.HTTPError as e:
+            return url, e.code, ""
+        except Exception as e:                   # DNS, TLS, timeout
+            err = type(e).__name__
+            if attempt + 1 < attempts:
+                time.sleep(2)
+    return url, 0, err
 
 
 # URLs that cannot be fetched and are not defects:

@@ -222,7 +222,7 @@ Before you can use a container you need to provision the `./data` host directory
   - /data/home/*/.ssh/authorized_keys --> sets authorized_keys permissions
 - Create a provisioned hash signature, in `/data/etc/ssh/bastion_provisioned_hash`,
   covering
-  - `/etc/passwd`, `/etc/shadow` and each user's `authorized_keys`
+  - `/etc/passwd`, `/etc/group` and `/etc/shadow`
   - `sshd_config` and the ssh host keys
   - the host and user CA files, when `CA_ENABLED=yes`
   - **everything in `/etc/ssh/sshd_config.d/`, plus a listing of that
@@ -236,6 +236,16 @@ Before you can use a container you need to provision the `./data` host directory
     start; the `.sum` file lets the list itself be checked.
 - If `./data` bind mount is already provisioned it will use existing files
 
+> **Nothing under `/home` is hashed — `authorized_keys` included.** The
+> checksum is over `/etc`, and it has to be: with TOTP enabled the
+> `.google_authenticator` file in each home directory is rewritten at every
+> login to record used tokens, so a hash over `/home` would fail on the second
+> connection. `/home` is instead mounted read-only, which stops a change from
+> *inside* the container but not one made on the host. Editing a key on the
+> host and restarting therefore takes effect silently. Re-run the provisioning
+> script after any change to `authorized_keys`, both to fix permissions and to
+> keep the two in step.
+>
 > **Data provisioned before 2026-08-27 has no recorded `sshd_config.d` listing,
 > and the container stops rather than skipping the check.** Re-run the provision
 > script against the existing `data/`: it is idempotent and keeps the host keys,
@@ -535,28 +545,148 @@ To access `remote-hostname`, the bastion container should be able to translate t
 
 ## Setting MFA/TOTP (Optional)
 
-To set TOTP you need to edit `.env` file and set `TOTP_ENABLED=yes`. Optionally you can change the `TOTP_ISSUER=My-Bastion`. then you need to run the provision.sh script. It will create the credentials in the data/home/user_name directory.
+TOTP adds a six-digit code **on top of** the key, not instead of it. When it is
+on, the container starts sshd with
 
-If you enable TOTP, then `data/home` **CAN'T** be mounted as READ-ONLY as pam-google-authenticator needs to write in the user home directory.
-
-Edit your docker-compose.yml file like this
-
-```yaml
-    volumes:
-      - $PWD/data/etc/passwd:/etc/passwd:ro
-      - $PWD/data/etc/shadow:/etc/shadow:ro
-      - $PWD/data/etc/group:/etc/group:ro
-      - $PWD/data/etc/ssh:/etc/ssh:ro
-      - $PWD/data/home:/home # remove :ro
+```text
+-o KbdInteractiveAuthentication=yes
+-o AuthenticationMethods=publickey,keyboard-interactive
+-o UsePAM=yes
 ```
+
+and the comma in `publickey,keyboard-interactive` means *both*, in that order —
+a valid key alone no longer gets in. `sshd_config` in this directory says
+`AuthenticationMethods publickey`; the `-o` on the command line is read before
+the file and sshd keeps the first value it obtains for a keyword, so the
+runtime setting wins. That is why the file can look as though it contradicts
+this. The PAM side is baked into the image: the `Dockerfile` strips
+`include common-auth` from `/etc/pam.d/sshd` and appends
+`pam_google_authenticator.so`.
+
+To turn it on, set `TOTP_ENABLED=yes` in `.env` and **re-run the provisioning
+script**. For each user it does not already have a secret for, it writes three
+files into that user's home directory:
+
+| file | mode | what it is |
+| --- | --- | --- |
+| `.google_authenticator` | 400 | the secret, and the record of used codes |
+| `totp_uri` | 400 | the `otpauth://` URI, to paste into an authenticator app |
+| `totp_qr` | 400 | the same URI as a QR code, rendered with `qrencode` |
+
+Enrol by scanning `totp_qr` or pasting `totp_uri` into Google Authenticator,
+Aegis, 1Password or similar. The secret is generated time-based, with token
+reuse disallowed, a window of three codes either side, and a rate limit of
+three logins per thirty seconds.
+
+Three things about this are easy to get wrong:
+
+- **`data/home` must NOT be mounted read-only.** Disallowing token reuse means
+  `.google_authenticator` is *written* on every successful login, to record the
+  code just spent. With `:ro` the first login works and the rest fail. Drop the
+  flag from that one mount, and only that one:
+
+  ```yaml
+      volumes:
+        - $PWD/data/etc/passwd:/etc/passwd:ro
+        - $PWD/data/etc/shadow:/etc/shadow:ro
+        - $PWD/data/etc/group:/etc/group:ro
+        - $PWD/data/etc/ssh:/etc/ssh:ro
+        - $PWD/data/home:/home # remove :ro
+  ```
+
+  This does not weaken the provisioning checksum, which covers `/etc` only —
+  see the note under [Provision](#provision).
+
+- **Re-provisioning does not rotate an existing secret**, and neither
+  `TOTP_ISSUER` nor `TOTP_QR_ENCODE` is read again once one exists: both are
+  used only at the moment the secret is created. To re-enrol a user, or to
+  change how their entry is labelled, delete their `.google_authenticator` and
+  provision again — which invalidates whatever they already have in their app.
+
+- **The container refuses to start if any user is not enrolled.** At startup
+  `check_totp_users()` walks the members of the `ssh-bastion` group and stops
+  the container if one has no `.google_authenticator`, or if the file is not
+  owned by that user; a mode other than 400 is a warning. This is deliberate:
+  the alternative is a bastion that quietly accepts a key alone for the one
+  account nobody enrolled.
+
+A machine account that runs an unattended tunnel — the gateway's own key — has
+nowhere to type a code, so TOTP suits human operators rather than the
+`ib-gateway` user. `deploy/provision.sh` leaves it off for that reason.
 
 ## Use a certificate authority
 
-A certificate authority (CA) allows you to sign public keys (for hosts and users) and to verify signatures using the CA public key. This eliminates the need for known_hosts and authorized keys, all that you need is the host and user CA public key and to get your host and user public keys signed.
+A certificate authority (CA) signs public keys — for hosts and for users — so
+that each side verifies a signature instead of consulting a list. It replaces
+two lists, independently:
 
-You will need to manually copy your host certificate and public CA key into ./data/etc/ssh.
+- a **host certificate** means clients no longer need a `known_hosts` entry for
+  this bastion; they trust anything the host CA signed;
+- a **user CA** means the bastion no longer needs an `authorized_keys` line per
+  user; it accepts any key the user CA signed.
 
-Make sure to set the CA_ENABLED variable, and set host cert and CA file names or copy the files using the default names.
+Set `CA_ENABLED=yes` and copy the files into `data/etc/ssh` **before** running
+the provisioning script. The container then starts sshd with
+`-o HostCertificate=...` and `-o TrustedUserCAKeys=...`. The algorithm lists in
+`sshd_config` already include `ssh-ed25519-cert-v01@openssh.com` and the
+`rsa-sha2-*-cert-v01` variants, so nothing else needs changing.
+
+`SSHD_HOST_CERT` and `SSHD_USER_CA` name the files. Left empty — as `.env-dist`
+leaves them — they default to `/etc/ssh/ssh_host_ed25519_key-cert.pub` and
+`/etc/ssh/user_ca.pub`, which is why copying them in under those names is
+enough.
+
+Signing, for reference, with the CA key on the machine that holds it:
+
+```bash
+# the bastion's host key, signed as a host certificate
+ssh-keygen -s host_ca -I bastion -h -n bastion.example.com \
+    -V +52w ssh_host_ed25519_key.pub
+
+# a user's key, signed as a user certificate
+ssh-keygen -s user_ca -I jane -n jane -V +12w id_ed25519.pub
+```
+
+Three things to know before turning this on:
+
+- **A user certificate does not carry the `permitopen` / `permitlisten`
+  restrictions this project relies on.** Those live in `authorized_keys`, and a
+  certificate is precisely what lets a user in *without* an `authorized_keys`
+  line — so the whole restriction disappears with it. Put the equivalent in the
+  certificate at signing time instead, and check what you signed with
+  `ssh-keygen -L -f id_ed25519-cert.pub`:
+
+  ```bash
+  ssh-keygen -s user_ca -I jane -n jane -V +12w \
+      -O clear -O permit-port-forwarding \
+      -O 'permitopen=127.0.0.1:4002' \
+      -O 'permitlisten=127.0.0.1:1' \
+      id_ed25519.pub
+  ```
+
+  See [Restricting a tunnel key](#restricting-a-tunnel-key) for why both
+  directions have to be named.
+
+- **Turning it on proves nothing.** `set_CA()` checks whether the file named by
+  `SSHD_HOST_CERT` exists and, if it does not, substitutes the default path —
+  with no message, so a typo in the variable looks like it worked. And if the
+  default is missing too, **sshd still starts**: it warns `Could not load host
+  certificate` and carries on, and says nothing at all about a missing
+  `TrustedUserCAKeys`. Measured 2026-08-28 against
+  `ghcr.io/dennisdeh/bastion:latest`: with both default paths absent,
+  `sshd -t` exits 0 and the container logs `Server listening on 0.0.0.0 port
+  22`. So `> SSH CA 🔏 enabled` in the log means the variable was read, not that
+  anything is signed or trusted — a bastion in that state accepts exactly what
+  it did before, from `authorized_keys`. Check it from outside instead: `ssh -v`
+  should report the host key accepted through a certificate, and a client
+  holding only a CA-signed key should get in. See `docs/OPEN_ITEMS.md` #26.
+
+- **The CA files are part of the provisioning checksum.** `set_checksum()`
+  hashes the host certificate and the user CA when they are present, so
+  replacing or removing one afterwards makes the container refuse to start
+  until you provision again. Renewing a certificate is a re-provision, not a
+  file copy. Note the asymmetry: a CA file *added* after provisioning is not in
+  the recorded list, so it is not caught — copy the files in first.
 
 ## Additional security
 
