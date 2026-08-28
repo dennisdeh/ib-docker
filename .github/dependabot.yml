@@ -5,13 +5,25 @@
 
 version: 2
 updates:
+  # Watch the SOURCES of every image this repository produces.
+  #
+  # This used to name /stable and /latest, which are *generated*: update.sh
+  # rewrites them from the templates, so a base-image bump landed there is
+  # destroyed by the next release. It looked like coverage and was churn. The
+  # real sources were unwatched, and so were the two images that have no
+  # channel at all. See docs/OPEN_ITEMS.md #13.
+  #
+  # Dependabot matches a Dockerfile by /dockerfile|containerfile/i on the file
+  # name, unanchored, so "/" reaches Dockerfile.template and
+  # Dockerfile.tws.template as well as any plain Dockerfile. `directories`
+  # (plural) is the key that takes a list; `directory` takes one path only.
+  # tests/unit/images.bats fails if a directory holding a Dockerfile is missing
+  # from this list.
   - package-ecosystem: "docker"
-    directory: "/stable"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "docker"
-    directory: "/latest"
+    directories:
+      - "/" # Dockerfile.template, Dockerfile.tws.template
+      - "/bastion" # the ssh bastion image
+      - "/tests" # the bats runner tests/run.sh container builds
     schedule:
       interval: "daily"
 

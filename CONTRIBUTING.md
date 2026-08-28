@@ -35,7 +35,7 @@ This repository builds three images — `ghcr.io/dennisdeh/ib-gateway`,
 | `bastion/` | the ssh bastion image, with its own README and provisioning script |
 | `deploy/provision.sh` | sets a host up from the published images; emits its own compose file |
 | `template_README.md` | **the README source.** `README.md` is generated from it. |
-| `tests/` | the `bats` suites and the documentation link checker |
+| `tests/` | the `bats` suites, the runner image they use, and the link checker |
 | `docs/` | `RUNBOOK.md`, `DECISIONS.md`, `OPEN_ITEMS.md` — see *Documentation* below |
 
 Two of those are worth repeating, because both failure modes are silent:

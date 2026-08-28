@@ -100,6 +100,14 @@ its own schedule, so it is tagged with a version of its own. Publishing it
 alongside the other two is what lets a host be set up without a checkout to
 build anything from.
 
+**These three are the whole stack.** Everything the sample
+`docker-compose.yml` runs is built here from this checkout, and everything
+`deploy/provision.sh` pulls is one of the three above — there is no fourth
+image to find somewhere else. What they are built *on* is short enough to
+state: `ubuntu` for the gateway and the bastion, and
+[linuxserver/rdesktop](https://github.com/linuxserver/docker-rdesktop/) for the
+TWS desktop, which is the only third-party image inside anything published.
+
 ## Deploying
 
 Because all three images are published, a host needs no checkout to run this.

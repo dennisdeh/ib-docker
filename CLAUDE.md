@@ -128,6 +128,15 @@ makes the container refuse to start — that is the feature, not a bug.
   `./update.sh latest <latest-version>`, reusing each channel's current version
   (`grep 'ENV IB_GATEWAY_VERSION=' stable/Dockerfile`). Doing only one leaves
   the other channel running last month's scripts.
+- **Three images, and everything that runs is one of them.**
+  `ghcr.io/dennisdeh/ib-gateway`, `tws-rdesktop` and `bastion` are all built
+  and published here; every compose file in the tree builds all three from this
+  checkout, and `deploy/provision.sh` pulls only those three. The base images
+  are the deliberate exception — `ubuntu`, `lscr.io/linuxserver/rdesktop` for
+  the TWS desktop, and `bats/bats` for the test runner, which never ships.
+  `tests/unit/images.bats` holds that inventory: a fourth image in a compose
+  file, a service with no build context, or a new third-party base all fail it.
+  See `docs/DECISIONS.md` #27.
 - **`README.md` is generated from `template_README.md`** by
   `.github/workflows/detect-releases.yml`, an `envsubst` over exactly seven
   variables: `$LATEST_VERSION`, `$LATEST_MINOR`, `$LATEST_IBC`,
@@ -352,7 +361,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 90 tests as of 2026-08-28.
+  container, no network, no credentials. 97 tests as of 2026-08-28.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,

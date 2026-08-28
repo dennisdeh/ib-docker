@@ -3,7 +3,8 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-28 — items 1-16 from the QA / adversarial QA sweep of
+*Last updated: 2026-08-28 (twice: the summary and renumbering in the morning,
+item 13 fixed in the afternoon) — items 1-16 from the QA / adversarial QA sweep of
 2026-08-25; item 22 from wiring release detection to publication on 2026-08-26;
 items 19-21 from 2026-08-27, while writing `deploy/provision.sh` and bumping
 IBC. Reorganised on 2026-08-28: the summary below was added, and three item
@@ -23,12 +24,12 @@ actually outstanding.
 | 10 | `x11vnc` takes its password on the command line | Low |
 | 11 | the TWS image's default RDP password is `abc` | Low |
 | 12 | `run_ssh.sh` re-parses operator-supplied env values through a shell | Low |
-| 13 | Dependabot watches the *generated* channel directories, not the sources | Low |
 | 14 | `PWD` is defined inside `.env` | Low |
 | 15 | `PORT_HOST_SSH_BASTION` in `.env` is referenced by nothing | Low |
 | 16 | a local `docker compose build --pull tws` still needs a manual `docker tag` — CI is fixed | Medium |
 | 23 | `.pre-commit-config.yaml` revs are pinned to 2024 and nothing updates them | Low |
 | 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium |
+| 25 | the `stable` channel has never been published: `ghcr.io/dennisdeh/ib-gateway:stable` and the TWS one do not exist | High |
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
 record of what changed and how it was verified.
@@ -477,6 +478,52 @@ pins the version↔digest pairing offline — two files pinning the same IBC
 version must pin the same digest, and two pinning different versions must not,
 which is precisely the shape of this bug. Shown red against the merged state.
 
+### 25. The `stable` channel has never been published — **OPEN**
+
+*Found 2026-08-28, while auditing that every image the project needs is one it
+produces.*
+
+`README.md` documents six gateway/TWS tags. Three of them do not exist.
+Measured against the registry on 2026-08-28 with `docker manifest inspect`:
+
+```text
+present  ghcr.io/dennisdeh/ib-gateway:latest      [amd64 arm64]
+present  ghcr.io/dennisdeh/ib-gateway:10.50
+present  ghcr.io/dennisdeh/ib-gateway:10.50.1e
+MISSING  ghcr.io/dennisdeh/ib-gateway:stable
+MISSING  ghcr.io/dennisdeh/ib-gateway:10.45
+MISSING  ghcr.io/dennisdeh/ib-gateway:10.45.1j
+```
+
+`tws-rdesktop` is identical - every `latest` tag present, every `stable` tag
+missing. `bastion:latest` and `bastion:2604.01` are both present, for both
+architectures.
+
+**Nothing is miswired.** Publication is driven by `detect-releases.yml`, which
+calls `publish.yml` only for a channel that has *moved*. That went into effect
+on 2026-08-26; `latest` moved to `10.50.1e` on 2026-08-27 and published
+correctly. `stable` has been on `10.45.1j` throughout, so it has never had an
+occasion to publish, and there was no back-fill for the versions already pinned
+when the automation landed. It will publish by itself at stable's next IB
+release.
+
+Until then the gap is user-visible, not cosmetic:
+
+- the *Supported Tags* table promises tags that 404;
+- `deploy/provision.sh --channel stable` writes `IB_GATEWAY_IMAGE=...:10.45.1j`
+  into the emitted `.env`, and `docker compose up -d` on that host cannot pull
+  it;
+- `Dockerfile.tws` opens `FROM ghcr.io/dennisdeh/ib-gateway:<version>`, so the
+  TWS image for `stable` cannot be built from the registry either.
+
+**The fix is one run, not a patch:** `publish.yml` by `workflow_dispatch` with
+channel `stable` and the version left blank, which reads it from
+`stable/Dockerfile`; or a `v10.45.1j-stable` tag, which is the by-hand path the
+same workflow already accepts. Either publishes all three images and both
+architectures. This is deliberately not automated further - a back-fill is a
+one-off, and making detection publish channels that have not moved would
+re-push both channels every day.
+
 ## Low / accepted risk (record the decision if you accept it)
 
 | # | item | note |
@@ -485,7 +532,7 @@ which is precisely the shape of this bug. Shown red against the merged state.
 | 10 | `x11vnc … -passwd "$VNC_SERVER_PASSWORD"` in `run.sh` | Password visible in the container's process list; `-passwdfile`/`-rfbauth` avoid it. VNC auth is weak by design (8 effective chars). Mitigated by the `127.0.0.1` publish. |
 | 11 | TWS image default RDP password is `abc` (`${PASSWD:-abc}` in `start_session.sh`) | Safe only because the `tws` service in `docker-compose.yml` binds RDP to `127.0.0.1`. Anyone publishing 3389 more widely inherits a known password. |
 | 12 | `run_ssh.sh` runs `bash -c "ssh ${_OPTIONS} … ${_USER_TUNNEL}"` | Re-parses operator-supplied env values through a shell. Not a vulnerability (operator-controlled) but any metacharacter executes. |
-| 13 | Dependabot watches `/stable` and `/latest` only | Those are *generated*; a base-image bump there is overwritten by the next `update.sh`. The real sources (`Dockerfile.template`, `Dockerfile.tws.template`) and `/bastion` are unwatched, as is the floating tag `lscr.io/linuxserver/rdesktop:ubuntu-xfce`. |
+| 13 | Dependabot watched `/stable` and `/latest` only — **FIXED 2026-08-28** | Those are *generated*: a base-image bump landed there is overwritten by the next `update.sh`, so it looked like coverage and was churn, while the real sources went unwatched. The docker ecosystem now uses `directories:` and names `/` (which reaches `Dockerfile.template` and `Dockerfile.tws.template` — Dependabot matches any file name containing `dockerfile` or `containerfile`, case-insensitively and unanchored), `/bastion` and `/tests`. `tests/unit/images.bats` fails if a directory holding a Dockerfile is missing from that list, or if a generated one reappears in it. The floating tag `lscr.io/linuxserver/rdesktop:ubuntu-xfce` is now watched with the rest. |
 | 14 | `PWD` is defined inside `.env` | Renaming or moving the repository silently breaks every bind mount while compose still validates. |
 | 15 | `PORT_HOST_SSH_BASTION=2222` in `.env` is referenced nowhere | The bastion actually publishes `SSH_LISTEN_PORT=22222` on **0.0.0.0** — every other port here is pinned to `127.0.0.1`. Reachability is the point of a bastion, but a firewall rule written for 2222 protects nothing. |
 | 23 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them (numbered 18 until 2026-08-28, which the `arm` release-asset item already used) | e.g. `pre-commit-hooks v4.6.0`, `hadolint v2.12.1-beta`. Dependabot has no `pre-commit` entry. |
