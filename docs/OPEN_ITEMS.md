@@ -3,8 +3,8 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-28 (twice: the summary and renumbering in the morning,
-item 13 fixed in the afternoon) — items 1-16 from the QA / adversarial QA sweep of
+*Last updated: 2026-08-28 — the summary and renumbering, then items 13 and 25
+fixed and item 26 found, over the course of that day. Items 1-16 come from the QA / adversarial QA sweep of
 2026-08-25; item 22 from wiring release detection to publication on 2026-08-26;
 items 19-21 from 2026-08-27, while writing `deploy/provision.sh` and bumping
 IBC. Reorganised on 2026-08-28: the summary below was added, and three item
@@ -29,7 +29,6 @@ actually outstanding.
 | 16 | a local `docker compose build --pull tws` still needs a manual `docker tag` — CI is fixed | Medium |
 | 23 | `.pre-commit-config.yaml` revs are pinned to 2024 and nothing updates them | Low |
 | 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium |
-| 25 | the `stable` channel has never been published: `ghcr.io/dennisdeh/ib-gateway:stable` and the TWS one do not exist | High |
 | 26 | `CA_ENABLED=yes` with no certificate files is a silent no-op that reports success | Medium |
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
@@ -479,7 +478,7 @@ pins the version↔digest pairing offline — two files pinning the same IBC
 version must pin the same digest, and two pinning different versions must not,
 which is precisely the shape of this bug. Shown red against the merged state.
 
-### 25. The `stable` channel has never been published — **OPEN**
+### 25. The `stable` channel had never been published — **FIXED**
 
 *Found 2026-08-28, while auditing that every image the project needs is one it
 produces.*
@@ -517,13 +516,34 @@ Until then the gap is user-visible, not cosmetic:
 - `Dockerfile.tws` opens `FROM ghcr.io/dennisdeh/ib-gateway:<version>`, so the
   TWS image for `stable` cannot be built from the registry either.
 
-**The fix is one run, not a patch:** `publish.yml` by `workflow_dispatch` with
-channel `stable` and the version left blank, which reads it from
-`stable/Dockerfile`; or a `v10.45.1j-stable` tag, which is the by-hand path the
-same workflow already accepts. Either publishes all three images and both
-architectures. This is deliberately not automated further - a back-fill is a
-one-off, and making detection publish channels that have not moved would
-re-push both channels every day.
+**FIXED 2026-08-28** by pushing `v10.45.1j-stable`, the by-hand release path
+`publish.yml` already accepts. Before pushing, that workflow's own channel and
+version resolution was run against the tag offline - channel `stable`, version
+`10.45.1j`, minor `10.45`, and the guard that refuses to tag an image with a
+version it does not contain agreed with `stable/Dockerfile` - and all four
+installer assets plus `IBCLinux-3.24.1.zip` were confirmed to return 200, so
+the `arm64` leg could not 404 half an hour in.
+
+Measured after the run:
+
+```text
+ib-gateway   :stable = :10.45.1j = :10.45   sha256:c3b06296...  [amd64 arm64]
+tws-rdesktop :stable = :10.45.1j = :10.45   sha256:b3e8eeb3...  [amd64 arm64]
+bastion      :latest = :2604.01             sha256:f26cd50e...  [amd64 arm64]
+```
+
+The channel tag and both version tags resolve to one image in each case. The
+images carry `ENV IB_GATEWAY_VERSION=10.45.1j`, so the tags describe what is
+inside them, and `org.opencontainers.image.revision` records `9747d604`, the
+commit they were built from. `tws-rdesktop:stable` carries
+`ENV IBC_VERSION=3.24.1`, which independently confirms the per-channel IBC
+reporting added the same day (`DECISIONS.md` #26): stable does ship 3.24.1
+while latest ships 3.24.2, and the README now says so. The `latest` channel was
+untouched - `ib-gateway:latest` still resolves to `10.50.1e`'s digest.
+
+**Not automated further, deliberately.** A back-fill is a one-off; making
+detection publish channels that have not moved would re-push both channels
+every day. The next `stable` release publishes itself.
 
 ### 26. `CA_ENABLED=yes` with no certificate files reports success and does nothing — **OPEN**
 
