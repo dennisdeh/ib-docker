@@ -57,5 +57,5 @@ CMD ["/usr/sbin/sshd", "-D", "-e"]
 # forked from, which bastion/README.md credits.
 LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-docker
 LABEL org.opencontainers.image.description="OpenSSH Bastion container"
-LABEL org.opencontainers.image.licenses=MIT
+LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.version=${IMAGE_VERSION}-${BASE_VERSION}

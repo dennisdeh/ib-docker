@@ -3,7 +3,8 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-29 — item 16 and the fork-PR limit below rewritten once
+*Last updated: 2026-08-30 — items 28 and 29 added and fixed the same day. On
+2026-08-29: item 16 and the fork-PR limit below rewritten once
 the ghcr.io packages turned out to be public (`DECISIONS.md` #32). Before that,
 on 2026-08-28: the summary and renumbering, then items 13 and 25
 fixed, item 26 found, and item 27 fixed by merging the
@@ -19,12 +20,13 @@ where it is rather than being renumbered or deleted. Most of what follows is
 therefore a record of something already repaired; the table below is what is
 actually outstanding.
 
-## Still open, as of 2026-08-28
+## Still open, as of 2026-08-30
 
 | # | item | where | why it is still here |
 |---|---|---|---|
 | 9 | the container user can `sudo` to root without a password | Low | Removing it would break `START_SCRIPTS`/`X_SCRIPTS`/`IBC_SCRIPTS`, which exist so operators can install things at start-up and are documented as doing so. There is no privilege boundary inside the container to defend once arbitrary mounted shell runs in it, so this buys little and breaks a published feature. Needs a decision about that feature, not a patch. |
 | 14 | `PWD` is defined inside `.env` | Low | Compose reads `.env` from the project directory but does not set `PWD` from it, so the bind mounts need the value written down. Removing it means changing every mount to a relative path, which changes behaviour for anyone running compose from elsewhere. Worth doing deliberately, not as a drive-by. |
+| 30 | a locally built gateway image labels itself `<version>-`, with no channel | Low | Found 2026-08-30 while validating #28, and left alone because it was outside what that change was asked to do. One line either way: give the runtime stage `ENV IB_GATEWAY_RELEASE_CHANNEL=$CHANNEL`, or point the `LABEL` at `IB_GATEWAY_CHANNEL`, the name the setup stage actually defines. |
 | 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium | The cause is upstream: Canonical publishes an index before the `ports.ubuntu.com` pool has the package. The retry loop already turns it from a failed release into a slower one. Curing it means pinning or mirroring the archive, which is a much larger change than the fault deserves. |
 
 Fixed on 2026-08-29, each with a test shown red against the unfixed code:
@@ -33,6 +35,10 @@ is now announced), **#12** (no shell re-parse of operator values), **#15** (the
 dead `.env` key, and a check that no key is dead), **#23** (hook revisions),
 **#26** (`CA_ENABLED` refuses to be a no-op). **#16** moved to
 `DECISIONS.md` #30 — the part that remains is by design.
+
+Fixed on 2026-08-30, both with a test shown red first: **#28** (the two licence
+labels, which had each other's licence) and **#29** (`bastion/.env` inside the
+bastion build context).
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
 record of what changed and how it was verified.
@@ -678,3 +684,6 @@ wiring offline.
 | 23 | `.pre-commit-config.yaml` revs are pinned to 2024 releases and no ecosystem updates them — **FIXED 2026-08-29** (numbered 18 until 2026-08-28, which the `arm` release-asset item already used) | `pre-commit autoupdate` moved five of the six: `pre-commit-hooks` v4.6.0→v6.0.0, `shellcheck` v0.10.0→v0.11.0, `shfmt` v3.12.0-1→v3.13.1-1, `hadolint` v2.12.1-beta→v2.15.1, `markdownlint-cli` v0.39.0→v0.49.1; `dotenv-linter` was current. Every hook passes at the new revisions, with one rule turned off: `MD060` arrived in markdownlint 0.49 and fires 228 times on table-pipe padding in the generated README — see `DECISIONS.md` #31. Dependabot still has no `pre-commit` ecosystem, so this stays a manual `autoupdate`; the point of the item was that the revisions had gone stale, not that a bot must do it. |
 | 19 | The bastion image is published nowhere — **FIXED 2026-08-27** | It was built from `bastion/` and tagged `dennisdeh/bastion:local-resolute`, so `deploy/provision.sh` needed a checkout to build one of the three images. `publish.yml` now pushes `ghcr.io/dennisdeh/bastion`, tagged with the `ARG IMAGE_VERSION` the bastion's own Dockerfile declares, and `provision.sh` pulls it and only falls back to building. `build.yml` builds it too, so a break fails the PR check rather than a release. |
 | 20 | `sshd_config.d/*.conf` is included but not covered by the provisioning hash — **FIXED 2026-08-27** | `bastion/sshd_config` opens with `Include /etc/ssh/sshd_config.d/*.conf`, and `set_checksum()` hashed `sshd_config` and the host keys but nothing from that directory, so a drop-in could set `PermitRootLogin` or widen `AllowTcpForwarding` while `check_provision()` still reported a valid checksum. Confirmed against the unfixed image: adding, editing **and** removing a drop-in all started normally. `set_checksum()` now hashes those files *and* a recorded listing of the directory — the files alone cannot catch an addition or a removal, since every recorded line still checks out — and `check_sshd_config_d()` in `entrypoint.sh` compares the listing before sshd starts. Pinned by `tests/container/bastion_hash.bats`. **Upgrading the image requires re-provisioning `data/`**: the container refuses to start on data provisioned before this, rather than skipping the check. |
+| 28 | The gateway and TWS images labelled themselves `"Apache License Version 2.0"` and the bastion labelled itself `MIT` — each the other's licence — **FIXED 2026-08-30** | The tree the gateway and TWS are built from is MIT (`LICENSE`); `bastion/` is a fork carrying its own Apache-2.0 `LICENSE.txt`. Both templates and all four generated channel Dockerfiles now say `MIT`, and `bastion/Dockerfile` says `Apache-2.0`, as SPDX identifiers. Nothing had caught it because `docker/metadata-action` derives this label from the repository and applies it over the Dockerfile's, so every published image read `MIT` whatever its own Dockerfile said — measured on all three published images, 2026-08-30 — while a local `docker compose build` kept the Dockerfile's value, and the two therefore disagreed. That same override is why fixing the bastion also needed `publish.yml` to name `Apache-2.0` in the bastion meta step's own `labels:`; the derived `MIT` would otherwise have won again. `tests/unit/images.bats` now pins each Dockerfile to the licence file its directory carries, and `tests/unit/workflows.bats` pins the publish-time override. See `DECISIONS.md` #33. |
+| 29 | `bastion/.env` sat inside the bastion build context — **FIXED 2026-08-30** | `bastion/.dockerignore` excluded `/data` and editor droppings but not the env file beside them, so a real credentials file was uploaded to the daemon on every build of that image. Nothing ever leaked: `bastion/Dockerfile` `COPY`s five files by name and never took it — but the first `COPY . .` anyone writes would ship it, and `.gitignore` had been refusing the same file since 2026-08-25. The dockerignore now carries the `.env`, `.env.*`, `*.env` trio `.gitignore` uses (`.env-dist` matches none of them and stays), and `tests/unit/images.bats` fails if one of them or `/data` goes missing. `latest/` and `stable/` need no equivalent: `update.sh` generates them wholesale and they hold nothing untracked. |
+| 30 | `LABEL org.opencontainers.image.version=${IB_GATEWAY_VERSION}-${IB_GATEWAY_RELEASE_CHANNEL}` in `Dockerfile.template`, whose second variable is defined nowhere in that file | The setup stage declares `ENV IB_GATEWAY_CHANNEL`; the runtime stage that carries this `LABEL` declares neither name, so the label expands to the version and a trailing dash. Measured 2026-08-30 by building the same three lines: the value is `"10.50.1e-"`. `docker build --check` reports it as `UndefinedVar` on `latest/Dockerfile:145` and `stable/Dockerfile:145`. Only local builds are affected — `docker/metadata-action` overwrites this label at publish time with `<version>-<channel>`, which is what all three published images carry (measured the same day), the same override that hid #28. `Dockerfile.tws.template` has no such bug: it declares `IB_GATEWAY_RELEASE_CHANNEL` itself. The other two `UndefinedVar` warnings on those files are the self-referencing `ARG USER_ID="${USER_ID:-1000}"` / `USER_GID` defaults, which resolve to `1000` as intended — noise, not a defect. |

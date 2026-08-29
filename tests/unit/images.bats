@@ -182,6 +182,56 @@ tree_grep() {
 	done
 }
 
+@test "images: each Dockerfile claims the licence its own directory carries" {
+	# The two were swapped. The gateway and TWS templates labelled themselves
+	# "Apache License Version 2.0" while the tree they are built from is MIT,
+	# and bastion/Dockerfile labelled itself MIT while bastion/ carries its own
+	# Apache-2.0 LICENSE.txt - it is a fork, as bastion/README.md says. Nothing
+	# caught it because docker/metadata-action overwrites the label at publish
+	# time with one derived from the repository,
+	# so all three published images read MIT whatever the Dockerfile said -
+	# measured on the published images, 2026-08-30. A local `docker compose
+	# build` keeps the Dockerfile's value, so the two disagreed.
+	#
+	# SPDX identifiers, which is what the label is specified to hold and what
+	# metadata-action emits.
+	local f
+	for f in Dockerfile.template Dockerfile.tws.template; do
+		run grep -qxF 'LABEL org.opencontainers.image.licenses=MIT' "${ROOT}/${f}"
+		[ "$status" -eq 0 ] || {
+			echo "${f} must label MIT, the licence of the tree it is built from"
+			return 1
+		}
+	done
+	run grep -q '^MIT License' "${ROOT}/LICENSE"
+	[ "$status" -eq 0 ]
+
+	run grep -qxF 'LABEL org.opencontainers.image.licenses=Apache-2.0' "${ROOT}/bastion/Dockerfile"
+	[ "$status" -eq 0 ] || {
+		echo "bastion/Dockerfile must label Apache-2.0; bastion/LICENSE.txt is that licence"
+		return 1
+	}
+	run grep -q 'Apache License' "${ROOT}/bastion/LICENSE.txt"
+	[ "$status" -eq 0 ]
+}
+
+@test "images: the bastion build context excludes the files it must never ship" {
+	# The context is a directory people keep real files in: bastion/.env holds
+	# the bastion's own settings and /data holds the provisioned host keys,
+	# shadow and authorized_keys. Neither is COPYd today - the Dockerfile names
+	# five files - so nothing leaked; both were nonetheless uploaded to the
+	# daemon on every build, and the first `COPY . .` anyone writes ships them.
+	# .gitignore already refuses them; this is the same refusal for the build.
+	local ignore="${ROOT}/bastion/.dockerignore" pat
+	for pat in '/data' '.env' '.env.*' '*.env'; do
+		run grep -qxF "$pat" "$ignore"
+		[ "$status" -eq 0 ] || {
+			echo "bastion/.dockerignore does not exclude '${pat}'"
+			return 1
+		}
+	done
+}
+
 @test "images: nothing tells a reader to log in before pulling" {
 	# All three packages are public - measured anonymously on 2026-08-29; see
 	# docs/DECISIONS.md #32. They were private until then, and the instruction to

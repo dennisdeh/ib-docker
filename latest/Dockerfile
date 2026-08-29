@@ -141,5 +141,5 @@ CMD ["/home/ibgateway/scripts/run.sh"]
 LABEL org.opencontainers.image.source=https://github.com/dennisdeh/ib-docker
 LABEL org.opencontainers.image.url=https://github.com/dennisdeh/ib-docker/pkgs/container/ib-gateway
 LABEL org.opencontainers.image.description="Docker image with IB Gateway and IBC "
-LABEL org.opencontainers.image.licenses="Apache License Version 2.0"
+LABEL org.opencontainers.image.licenses=MIT
 LABEL org.opencontainers.image.version=${IB_GATEWAY_VERSION}-${IB_GATEWAY_RELEASE_CHANNEL}

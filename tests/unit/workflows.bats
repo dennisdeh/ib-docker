@@ -198,6 +198,21 @@ line_of() {
 	[ "$status" -eq 0 ]
 }
 
+@test "publish: the bastion's licence label survives metadata-action" {
+	# metadata-action emits org.opencontainers.image.licenses from the
+	# *repository's* licence - MIT - and its labels are applied after the
+	# Dockerfile's, so they win. That is fine for the gateway and TWS, which are
+	# MIT, and wrong for the bastion, which is Apache-2.0: the published image
+	# read MIT until 2026-08-30 whatever bastion/Dockerfile said. Naming it in
+	# the step's own `labels:` is what overrides the derived default.
+	run grep -q 'org.opencontainers.image.licenses=Apache-2.0' "${WORKFLOWS}/publish.yml"
+	[ "$status" -eq 0 ] || {
+		echo "the bastion meta step must pin org.opencontainers.image.licenses=Apache-2.0,"
+		echo "or metadata-action labels the published image MIT from the repository licence"
+		return 1
+	}
+}
+
 @test "detect-ibc: the pinned IBC digest is verified every run" {
 	# IBC ships no checksum file, so the digest is pinned by hand beside the
 	# version. A bump that moves one and not the other breaks nothing until a

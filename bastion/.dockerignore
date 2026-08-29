@@ -1,4 +1,12 @@
+# Real files this directory holds that must not reach the daemon, let alone
+# the image: /data is the provisioned host keys, shadow and authorized_keys,
+# and .env is the bastion's own settings. The same three patterns .gitignore
+# uses; .env-dist matches none of them and stays.
 /data
+.env
+.env.*
+*.env
+
 ### Linux ###
 *~
 

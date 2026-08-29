@@ -286,9 +286,13 @@ jobs:
           tags: |
             type=raw,value=${{ steps.bastion.outputs.version }}
             type=raw,value=latest
+          # metadata-action derives `licenses` from the repository - MIT - and
+          # applies its labels over the Dockerfile's, so the bastion has to name
+          # its own here: bastion/ carries an Apache-2.0 LICENSE.txt.
           labels: |
             org.opencontainers.image.revision=${{ steps.version.outputs.sha }}
             org.opencontainers.image.version=${{ steps.bastion.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
 
       - name: Build and push bastion
         uses: docker/build-push-action@v7
