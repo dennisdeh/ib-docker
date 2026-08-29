@@ -8,9 +8,9 @@
 # hadolint global ignore=DL3008
 
 # The gateway image this stage reads from. Both halves are build args so a
-# build with nothing published yet - CI, or a clean clone - can point them at an
-# image it has just built instead of at ghcr.io, which is not anonymously
-# pullable. See docs/DECISIONS.md.
+# build with nothing published yet - CI, or a version whose tag does not exist
+# on ghcr.io yet - can point them at an image it has just built. See
+# docs/DECISIONS.md.
 ARG IB_GATEWAY_BASE_IMAGE=ghcr.io/dennisdeh/ib-gateway
 ARG IB_VERSION=$VERSION
 FROM ${IB_GATEWAY_BASE_IMAGE}:${IB_VERSION} AS setup

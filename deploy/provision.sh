@@ -359,10 +359,10 @@ resolve_bastion_image() {
 	BASTION_IMAGE="ghcr.io/dennisdeh/bastion:${ver:-latest}"
 }
 
-# Published alongside the gateway and TWS images, so this normally pulls. The
-# build stays as a fallback: ghcr.io/dennisdeh is private, so a host that has
-# not run `docker login ghcr.io` cannot pull, and a freshly bumped
-# IMAGE_VERSION has no published tag until the next release.
+# Published alongside the gateway and TWS images, and public, so this normally
+# pulls with no credentials. The build stays as a fallback: a freshly bumped
+# IMAGE_VERSION has no published tag until the next release, and a host may
+# have no route to ghcr.io at all.
 ensure_bastion_image() {
 	if docker image inspect "$BASTION_IMAGE" >/dev/null 2>&1; then
 		log "bastion image present: ${BASTION_IMAGE}"
@@ -373,7 +373,7 @@ ensure_bastion_image() {
 		return 0
 	fi
 	warn "could not pull ${BASTION_IMAGE}"
-	warn "ghcr.io/dennisdeh is private - 'docker login ghcr.io' if you meant to pull it"
+	warn "the package is public - check the tag exists and that this host can reach ghcr.io"
 	[ -d "${REPO_ROOT}/bastion" ] || die "and there is no bastion/ here to build it from"
 	log "building ${BASTION_IMAGE} from ${REPO_ROOT}/bastion"
 	docker build -t "$BASTION_IMAGE" \

@@ -11,7 +11,8 @@ services:
         IMAGE_VERSION: ${IMAGE_VERSION}
     restart: unless-stopped
     # Same name the root compose file and publish.yml use. `pull_policy: build`
-    # keeps this from reaching for the private ghcr.io tag when building here.
+    # keeps this from pulling the published ghcr.io tag over the image built
+    # here.
     pull_policy: build
     image: ghcr.io/dennisdeh/bastion:latest
     container_name: ${CONTAINER_NAME_BASTION:-bastion}

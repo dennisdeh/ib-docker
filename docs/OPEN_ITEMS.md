@@ -3,7 +3,9 @@
 Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
-*Last updated: 2026-08-28 — the summary and renumbering, then items 13 and 25
+*Last updated: 2026-08-29 — item 16 and the fork-PR limit below rewritten once
+the ghcr.io packages turned out to be public (`DECISIONS.md` #32). Before that,
+on 2026-08-28: the summary and renumbering, then items 13 and 25
 fixed, item 26 found, and item 27 fixed by merging the
 `claude/github-actions-issues` branch, over the course of that day. Items 1-16 come from the QA / adversarial QA sweep of
 2026-08-25; item 22 from wiring release detection to publication on 2026-08-26;
@@ -96,9 +98,11 @@ this is host state, not a commit). `cert.pem` is a public certificate and stays
 ## Medium
 
 *Items 4-8 came from the 2026-08-25 sweep; four of the five were fixed the same
-day on branch `qa-medium-fixes`. Item 16 is still open — the local TWS build
-needs a decision (make the package public, or add a `build.args` entry) rather
-than a patch. Item 17 was found and fixed on 2026-08-26.*
+day on branch `qa-medium-fixes`. Item 16 is closed: it wanted one of two
+decisions — make the package public, or add a `build.args` entry — and both
+were taken, the build args on 2026-08-25 and the visibility on 2026-08-29. What
+is left of it is `DECISIONS.md` #30. Item 17 was found and fixed on
+2026-08-26.*
 
 ### 4. IBC and the aarch64 JDK installed without verification — **FIXED**
 
@@ -230,18 +234,20 @@ the day before that, and re-verified on 2026-08-29 by building the tws `setup`
 stage on its own — it resolved against the image `docker compose build
 ib-gateway` had just produced, with no `docker tag` and no registry access.*
 
-*What cannot be made to work is `--pull` on the tws build, and that is not a
-defect: `--pull` means "fetch the base from the registry every time" and the
-base is private. Use `docker compose build ib-gateway` then `docker compose
-build tws`, without `--pull` on the second. Moved to `DECISIONS.md` #30 so it
-stops reading as outstanding work.*
+*`--pull` on the tws build is still the wrong command, but no longer an
+impossible one: since the packages went public on 2026-08-29 it succeeds, and
+quietly builds against the registry's gateway image rather than the one just
+built here. Use `docker compose build ib-gateway` then `docker compose build
+tws`, without `--pull` on the second. Moved to `DECISIONS.md` #30 so it stops
+reading as outstanding work.*
 
 `Dockerfile.tws` starts `FROM ghcr.io/dennisdeh/ib-gateway:${IB_VERSION}` with
 `IB_VERSION` defaulting to the channel's gateway version, so the TWS build needs
-that **exact tag** present. `ghcr.io/dennisdeh/ib-gateway` is not anonymously
-pullable — `docker pull ghcr.io/dennisdeh/ib-gateway:10.48.1e` and `:10.47.1c`
-both returned `error from registry: denied` on 2026-08-25 — so `--pull` fails at
-the first stage with `403 Forbidden` from the ghcr token endpoint.
+that **exact tag** present. `ghcr.io/dennisdeh/ib-gateway` was not anonymously
+pullable then — `docker pull ghcr.io/dennisdeh/ib-gateway:10.48.1e` and
+`:10.47.1c` both returned `error from registry: denied` on 2026-08-25 — so
+`--pull` failed at the first stage with `403 Forbidden` from the ghcr token
+endpoint. It has been public since 2026-08-29; see `DECISIONS.md` #32.
 
 Building the gateway first is not enough either: `docker compose build
 ib-gateway` tags it `:latest`, not `:10.48.1e`. The workaround used to verify
@@ -413,12 +419,14 @@ hold a permission its caller withheld. Two limits remain, both by construction:
 - a version that has **never** been published cannot be built this way. That is
   why `publish.yml` pushes the gateway before it builds TWS, and why the release
   path goes through `publish.yml` rather than `build.yml`;
-- a pull request **from a fork** gets a read-only `GITHUB_TOKEN` with no access
-  to this repository's packages, so its TWS leg still fails. Nobody has opened
-  one; if that changes, making the package public is the fix.
+- a pull request **from a fork** got a read-only `GITHUB_TOKEN` with no access
+  to this repository's packages, so its TWS leg failed. Making the package
+  public was named here as the fix, and that is what happened on 2026-08-29
+  (`DECISIONS.md` #32): an anonymous pull of a published tag now succeeds.
 
-The local build is untouched — `docker compose build --pull tws` on this machine
-still needs the `docker tag` workaround above.
+The local build stopped needing the `docker tag` workaround above when the build
+args landed on 2026-08-25 — `docker compose build ib-gateway` then `docker
+compose build tws` resolves the base from the image just built.
 
 ### 22. Detecting a new IB Gateway version published nothing — **FIXED**
 

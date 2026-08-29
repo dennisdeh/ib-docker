@@ -37,6 +37,17 @@ compose_files() {
 	echo "${ROOT}/bastion/docker-compose.yml"
 }
 
+# Every file in the tree. Same find + grep shape as the helper in naming.bats,
+# for the same reasons: bats runs on BusyBox grep, which rejects --exclude-dir,
+# and `.git` is a *file* in a worktree rather than a directory to prune by path.
+tree_grep() {
+	find "$ROOT" \
+		-name .git -prune -o \
+		-name .venv -prune -o \
+		-name .claude -prune -o \
+		-type f -exec grep -nE -- "$1" /dev/null {} + 2>/dev/null || true
+}
+
 @test "images: every compose service runs an image this repository builds" {
 	# `image:` lines only - `tags:` entries are build outputs and name the same
 	# references. A service pulling anything else would not be reproducible from
@@ -61,10 +72,10 @@ compose_files() {
 }
 
 @test "images: every compose service that names one of our images also builds it" {
-	# `image:` without `build:` is how a compose file starts depending on a
-	# registry it cannot reach: ghcr.io/dennisdeh is private, so a service with
-	# no build context is unusable on a machine that has not logged in. The
-	# deployment story is deploy/provision.sh, which emits a separate file.
+	# `image:` without `build:` is how a compose file stops being reproducible
+	# from this checkout: the service would run whatever ghcr.io last published
+	# instead of what the tree in front of you builds. The deployment story is
+	# deploy/provision.sh, which emits a separate file.
 	local f images builds
 	for f in $(compose_files); do
 		images="$(grep -cE '^[[:space:]]*image:' "$f")"
@@ -79,8 +90,8 @@ compose_files() {
 
 @test "images: every compose service pins pull_policy: build" {
 	# Without it, compose prefers a registry copy of ghcr.io/dennisdeh/<x>:latest
-	# over the one it just built - and cannot fetch it, because the packages are
-	# private. Each service must be as many pull_policy lines as image lines.
+	# over the one it just built - and since the packages are public it will
+	# fetch it. Each service must be as many pull_policy lines as image lines.
 	local f images policy
 	for f in $(compose_files); do
 		images="$(grep -cE '^[[:space:]]*image:' "$f")"
@@ -169,4 +180,28 @@ compose_files() {
 			return 1
 		}
 	done
+}
+
+@test "images: nothing tells a reader to log in before pulling" {
+	# All three packages are public - measured anonymously on 2026-08-29; see
+	# docs/DECISIONS.md #32. They were private until then, and the instruction to
+	# `docker login ghcr.io` outlived that in five places, both READMEs among
+	# them, and in a warning deploy/provision.sh prints on a failed pull - where
+	# it misdiagnoses whatever actually went wrong.
+	#
+	# This pins the instruction, not the reasoning. A comment explaining itself
+	# with "the package is private" is prose no grep holds reliably, and it is
+	# split across lines in two of the places it occurred; DECISIONS.md #32 is
+	# the single home for that reasoning instead. Publishing logs in through
+	# docker/login-action, never through this string, so there is no legitimate
+	# occurrence of it. Should the packages ever go private again, that decision
+	# rewrites #32 and deletes this test in the same commit.
+	local hits
+	hits="$(tree_grep 'docker login ghcr\.io' |
+		grep -v "$(basename "${BATS_TEST_FILENAME}")" || true)"
+	[ -z "$hits" ] || {
+		echo "the ghcr.io packages are public; pulling them needs no login:"
+		echo "$hits"
+		return 1
+	}
 }

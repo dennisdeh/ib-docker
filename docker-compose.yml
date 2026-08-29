@@ -77,10 +77,11 @@ services:
       context: ./latest
       dockerfile: Dockerfile.tws
       args:
-        # tws builds FROM the gateway image, and ghcr.io/dennisdeh/ib-gateway
-        # is not anonymously pullable. Defaulting to the tag the ib-gateway
-        # service above produces means `docker compose build ib-gateway` then
-        # `docker compose build tws` needs no registry access at all.
+        # tws builds FROM the gateway image. Defaulting to the tag the
+        # ib-gateway service above produces means `docker compose build
+        # ib-gateway` then `docker compose build tws` verifies the pair built
+        # here; ghcr.io answers anonymously, so without this the base would
+        # come from the registry instead. See docs/DECISIONS.md #30.
         IB_GATEWAY_BASE_IMAGE: ${IB_GATEWAY_BASE_IMAGE:-ghcr.io/dennisdeh/ib-gateway}
         IB_VERSION: ${IB_GATEWAY_TAG:-latest}
       tags:
@@ -155,8 +156,8 @@ services:
     restart: unless-stopped
     # Published by publish.yml alongside the other two, so a deployment can
     # pull it; this file still builds it, which is how it is developed - and
-    # `pull_policy: build` keeps it from reaching for a private ghcr.io tag,
-    # exactly as the two services above do.
+    # `pull_policy: build` keeps it from pulling the published ghcr.io tag over
+    # the image just built here, exactly as the two services above do.
     pull_policy: build
     image: ghcr.io/dennisdeh/bastion:latest
     container_name: ${CONTAINER_NAME_BASTION:-bastion}

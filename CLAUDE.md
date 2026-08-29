@@ -4,7 +4,7 @@
 what the code cannot — which command to trust, what "done" means, and which
 plausible-looking action is the wrong one.*
 
-*Last updated: 2026-08-28*
+*Last updated: 2026-08-29*
 
 ---
 
@@ -476,13 +476,16 @@ trusting it — see *Debugging*.
   on a mismatch. That is the one publishing mistake nothing downstream can see.
 - Docker Hub is a mirror and is skipped when `DOCKERHUB_USERNAME` /
   `DOCKERHUB_TOKEN` are unset; ghcr.io is never optional.
-- **`ghcr.io/dennisdeh/ib-gateway` is not anonymously pullable, and
-  `Dockerfile.tws` starts `FROM` it.** Every workflow that builds the TWS image
-  therefore logs in to ghcr.io and carries `packages: read` (`packages: write`
-  when publishing) — including the caller, since a called workflow cannot hold
-  a permission its caller withheld. A version that has never been published
-  cannot be built this way at all, which is why `publish.yml` pushes the gateway
-  *before* it builds TWS. See `docs/OPEN_ITEMS.md` #16.
+- **All three packages are public** — measured anonymously on 2026-08-29, see
+  `docs/DECISIONS.md` #32. Pulling them needs no ghcr.io login, and
+  `tests/unit/images.bats` fails on any file that says otherwise. The
+  workflows that build the TWS image keep their ghcr.io login and their
+  `packages: read` (`packages: write` when publishing) — including the caller,
+  since a called workflow cannot hold a permission its caller withheld —
+  because `Dockerfile.tws` starts `FROM` the gateway image and a version that
+  has **never been published** still cannot be built that way, which is why
+  `publish.yml` pushes the gateway *before* it builds TWS. See
+  `docs/DECISIONS.md` #30 for the local build.
 - Every workflow job declares least-privilege `permissions:`. If a step starts
   failing on a token scope, widen *that job*, not the repository default.
 - `detect-releases.yml` and `detect-ibc-release.yml` run daily at 06:00 UTC and

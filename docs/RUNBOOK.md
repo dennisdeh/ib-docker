@@ -84,7 +84,8 @@ docker compose config      # validation only, starts nothing
 
 ## Provisioning a host from scratch
 
-*Last updated: 2026-08-27.*
+*Last updated: 2026-08-29 — the pull needs no credentials; see
+`DECISIONS.md` #32.*
 
 `deploy/provision.sh` prepares a host to run the **published** images alongside
 other containers, and emits the compose file to run it with. It creates the ssh
@@ -136,10 +137,11 @@ checkout**, so no credential is one `git add` away from a public repository.
   written as a bare newline, which `file_env` reads back as the empty string,
   so the gateway would otherwise start and fail its IB login.
 
-All three images are published, so the script pulls rather than builds. It falls
-back to building the bastion from `bastion/` when it cannot pull —
-`ghcr.io/dennisdeh` is private, so run `docker login ghcr.io` first, and a
-freshly bumped `IMAGE_VERSION` has no published tag until the next release.
+All three images are published and public, so the script pulls rather than
+builds and needs no registry credentials. It falls back to building the bastion
+from `bastion/` when it cannot pull — a freshly bumped `IMAGE_VERSION` has no
+published tag until the next release, and a host may have no route to ghcr.io
+at all.
 
 > **The bastion refuses to start on a `data/` provisioned before 2026-08-27.**
 > `sshd_config.d/*.conf` is now covered by the provisioning checksum — the files

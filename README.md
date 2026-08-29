@@ -110,7 +110,8 @@ TWS desktop, which is the only third-party image inside anything published.
 
 ## Deploying
 
-Because all three images are published, a host needs no checkout to run this.
+Because all three images are published and public, a host needs neither a
+checkout nor registry credentials to run this.
 `deploy/provision.sh` sets one up end to end — the ssh keys, the bastion's
 users, the secrets and the directory layout — and writes a compose file that
 **pulls** rather than builds.
@@ -118,7 +119,6 @@ users, the secrets and the directory layout — and writes a compose file that
 ```bash
 curl -fLO https://raw.githubusercontent.com/dennisdeh/ib-docker/master/deploy/provision.sh
 chmod +x provision.sh
-docker login ghcr.io          # the packages are private
 ./provision.sh init --version 10.50.1e --clients jupyter,research
 ```
 

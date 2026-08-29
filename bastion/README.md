@@ -40,10 +40,10 @@ cp /home/{$USERS}/.ssh/authorized_keys $PWD/data/home/{$USERS}/.ssh
 
 - Provision the `data` folder. This is required to create the folder structure required by SSH bastion. See more details on [provisioning](#provision)
 
-- We are ready to go. The image is published, so there is nothing to build:
+- We are ready to go. The image is published and public, so there is nothing
+  to build and nothing to log in to:
 
 ```bash
-docker login ghcr.io            # the package is private
 docker pull ghcr.io/dennisdeh/bastion:latest
 docker compose up -d
 ```
@@ -189,7 +189,7 @@ In addition to environment variables, you can modify the behavior of SSH bastion
 The image is published to the [github container registry](https://github.com/dennisdeh/ib-docker/pkgs/container/bastion)
 as `ghcr.io/dennisdeh/bastion`, for `linux/amd64` and `linux/arm64`, tagged
 `latest` and with its own `IMAGE_VERSION`. It is not on Docker Hub. The package
-is private, so `docker login ghcr.io` first.
+is public, so pulling it needs no credentials.
 
 You only need to build it to change it — or when a freshly bumped
 `IMAGE_VERSION` has no published tag yet:
@@ -200,7 +200,7 @@ docker compose build
 
 Both this file and the repository's root `docker-compose.yml` carry
 `pull_policy: build` on this service, so a `docker compose up` here builds from
-this directory rather than reaching for the private tag.
+this directory rather than pulling the published tag over what it just built.
 
 If defined, `APT_PROXY` is used during build time to speed the build up.
 
