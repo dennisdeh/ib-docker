@@ -528,9 +528,9 @@ your settings.
 
 ## Start-up scripts
 
-You can run scripts during start up to automate tasks or install additional
-tools. This can be done by setting environment variables `START_SCRIPTS`,
-`X_SCRIPTS` and `IBC_SCRIPTS` with a path containing start-up scripts.
+You can run scripts during start up to automate tasks. This can be done by
+setting environment variables `START_SCRIPTS`, `X_SCRIPTS` and `IBC_SCRIPTS`
+with a path containing start-up scripts.
 Scripts files should have `.sh` extension. Files will be executed in
 order, so `00-script.sh` will be executed before that `99-other-script.sh`.
 Start-up directory should be available in the container through a volume.
@@ -563,6 +563,20 @@ up. Scripts in `$HOME/X_SCRIPTS` will run once X environment is up, and
 `$HOME/IBC_SCRIPTS` once IBC runs. Take into account that scripts will run as
 soon as possible, so you might need to wait for X environment to be fully up or
 IBC to complete ibgateway/TWS start-up process.
+
+Scripts run as the unprivileged `ibgateway` user, which cannot become root: the
+image grants it no `sudo` rights and does not install `sudo` at all. To add
+packages, build an image on top of this one — which is also the only way they
+survive the container being recreated:
+
+```dockerfile
+FROM ghcr.io/dennisdeh/ib-gateway:latest
+USER root
+RUN apt-get update && \
+    apt-get install --no-install-recommends --yes <packages> && \
+    rm -rf /var/lib/apt/lists/*
+USER 1000:1000
+```
 
 ## Security Considerations
 

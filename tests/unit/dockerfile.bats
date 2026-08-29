@@ -242,3 +242,28 @@ ibc_pins() {
 		}
 	done
 }
+
+@test "build: no image grants its unprivileged user passwordless root" {
+	# The gateway image appended `ibgateway ALL=(ALL) NOPASSWD:ALL` to
+	# /etc/sudoers, so anything able to run code as ibgateway - the IB Gateway
+	# process itself included - was container-root. Nothing in the image ever
+	# used it: run_scripts() in common.sh runs each operator script with a plain
+	# `bash`. It was there so a START_SCRIPTS script could install packages;
+	# template_README.md now points at a derived image for that instead, which is
+	# also the only way a package survives a restart. Removed 2026-08-30, see
+	# docs/OPEN_ITEMS.md #9, which records why narrowing the grant to apt was
+	# rejected rather than chosen.
+	#
+	# Sources only: the parity tests above hold the channel copies to them.
+	local f bad=''
+	for f in "${ROOT}/Dockerfile.template" "${ROOT}/Dockerfile.tws.template" \
+		"${ROOT}/bastion/Dockerfile" "${ROOT}/tests/Dockerfile"; do
+		if grep -qE 'NOPASSWD|/etc/sudoers' "$f"; then
+			bad="${bad} ${f#"${ROOT}/"}"
+		fi
+	done
+	[ -z "$bad" ] || {
+		echo "a Dockerfile grants sudo rights; these images run unprivileged:${bad}"
+		return 1
+	}
+}

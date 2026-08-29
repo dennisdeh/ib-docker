@@ -4,7 +4,8 @@ Things that are wrong and not yet fixed. Something examined and found correct or
 deliberate belongs in `DECISIONS.md` instead.
 
 *Last updated: 2026-08-30 — items 28, 29 and 30 added and fixed the same day,
-30 in a second pass after it was found while verifying the first. On
+30 in a second pass after it was found while verifying the first, and item 9
+closed on the owner's decision. On
 2026-08-29: item 16 and the fork-PR limit below rewritten once
 the ghcr.io packages turned out to be public (`DECISIONS.md` #32). Before that,
 on 2026-08-28: the summary and renumbering, then items 13 and 25
@@ -25,7 +26,7 @@ actually outstanding.
 
 | # | item | where | why it is still here |
 |---|---|---|---|
-| 9 | the container user can `sudo` to root without a password | Low | Removing it would break `START_SCRIPTS`/`X_SCRIPTS`/`IBC_SCRIPTS`, which exist so operators can install things at start-up and are documented as doing so. There is no privilege boundary inside the container to defend once arbitrary mounted shell runs in it, so this buys little and breaks a published feature. Needs a decision about that feature, not a patch. |
+| 31 | a bastion-only fix reaches the published image only at the next IB Gateway release, and `tests/run.sh container` is red until it does | Low | Found 2026-08-30 while verifying #9, and not part of it. `publish.yml` pushes the bastion, but only ever runs on an IB Gateway release or by hand, so `bastion/entrypoint.sh`'s #26 fix of 2026-08-29 is not in `ghcr.io/dennisdeh/bastion:latest`, which was built 2026-08-27. Measured the same day: four `bastion_ca.bats` tests fail against the published image and all thirteen pass against one built from this tree. Fixing it means either publishing the bastion on its own trigger — a change to `DECISIONS.md` #22 — or a `workflow_dispatch` run now. |
 | 14 | `PWD` is defined inside `.env` | Low | Compose reads `.env` from the project directory but does not set `PWD` from it, so the bind mounts need the value written down. Removing it means changing every mount to a relative path, which changes behaviour for anyone running compose from elsewhere. Worth doing deliberately, not as a drive-by. |
 | 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium | The cause is upstream: Canonical publishes an index before the `ports.ubuntu.com` pool has the package. The retry loop already turns it from a failed release into a slower one. Curing it means pinning or mirroring the archive, which is a much larger change than the fault deserves. |
 
@@ -39,7 +40,8 @@ dead `.env` key, and a check that no key is dead), **#23** (hook revisions),
 Fixed on 2026-08-30, each with a test shown red first: **#28** (the two licence
 labels, which had each other's licence), **#29** (`bastion/.env` inside the
 bastion build context) and **#30** (the gateway's version label, which named no
-channel).
+channel). **#9** was closed the same day, but by a decision rather than a
+finding: it had been waiting on one since 2026-08-25.
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
 record of what changed and how it was verified.
@@ -675,7 +677,7 @@ wiring offline.
 
 | # | item | note |
 |---|---|---|
-| 9 | `echo "ibgateway ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers` in `Dockerfile.template` | The unprivileged container user can become root at will. With `START_SCRIPTS`/`X_SCRIPTS`/`IBC_SCRIPTS` executing arbitrary mounted shell, there is no privilege boundary inside the container. Inherited from upstream. |
+| 9 | `echo "ibgateway ALL=(ALL) NOPASSWD:ALL" \| tee -a /etc/sudoers` in `Dockerfile.template` — **FIXED 2026-08-30** | Anything able to run code as `ibgateway` — the IB Gateway process itself included — was container-root. Inherited from upstream, and **nothing in the image ever used it**: `run_scripts()` in `common.sh` runs each operator script with a plain `bash`. It existed only so a `START_SCRIPTS` script could install packages, which `template_README.md` promised in the words "or install additional tools". Both the grant and the `sudo` package are gone, and that section now points at a derived image (`FROM ghcr.io/dennisdeh/ib-gateway` … `USER root` … `USER 1000:1000`) — the supported way to add packages, and the only way they survive the container being recreated. **This is a breaking change** for anyone whose start-up scripts called `sudo`, and a quiet one: `run_scripts()` reports a failing script as "File … not found" and carries on. Nothing here used the hooks — all three keys are commented out in `.env` and the `init-scripts` mount in `docker-compose.yml`. Narrowing the grant to `apt` was offered and rejected as theatre: `sudo apt-get install ./x.deb` runs a maintainer script as root, and `-o APT::Update::Pre-Invoke::` runs anything. Decided by the owner, 2026-08-30, on that reasoning. `tests/unit/dockerfile.bats` fails on `NOPASSWD` or a write to `/etc/sudoers` in any source Dockerfile; shown red against the unfixed template, where it named that file and no other. |
 | 10 | `x11vnc … -passwd "$VNC_SERVER_PASSWORD"` in `run.sh` — **FIXED 2026-08-29** | The password was in argv, where anything able to read `/proc` could see it; x11vnc's own `-help` says exactly that about `-passwd` and points at `-passwdfile`. `start_vnc()` now writes it to a `0600` file and passes `-passwdfile rm:<file>`, the `rm:` prefix making x11vnc delete the file once it has read it — so it is neither in the process list nor left on disk. Confirmed the flag and the prefix against the published image before relying on them. `tests/unit/credentials.bats` runs the real `start_vnc` against a stub `x11vnc` and fails if the password appears in argv; shown red against `-passwd`. |
 | 11 | TWS image default RDP password is `abc` (`${PASSWD:-abc}` in `start_session.sh`) — **FIXED 2026-08-29, by saying so** | Still `abc`: changing the default breaks every deployment relying on it, and the image cannot see which interface the host published 3389 on. It now prints a five-line warning at every start when `PASSWD` is unset, naming the risk and the `127.0.0.1` assumption that makes it tolerable. `tests/unit/credentials.bats` asserts the warning appears without `PASSWD`, does not appear with it, and that the password actually set is unchanged either way. |
 | 12 | `run_ssh.sh` runs `bash -c "ssh ${_OPTIONS} … ${_USER_TUNNEL}"` — **FIXED 2026-08-29** | `SSH_OPTIONS` and `SSH_SCREEN` each carry several arguments in one variable and still have to be split, but only into words: `read -ra` does that and stops there, and the destination is passed as a single argument. Never a way in from outside — the values are operator-controlled — but a password with a backtick in it would have executed rather than failed to connect. `tests/unit/run_ssh.bats` gained three tests: a metacharacter in the destination does not run, a `$(...)` in the options does not run, and multi-word options still split into separate argv entries. The first two were shown red against the `bash -c` line. |

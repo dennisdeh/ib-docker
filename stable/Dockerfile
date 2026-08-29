@@ -113,7 +113,7 @@ RUN for attempt in 1 2 3; do \
     apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install --no-install-recommends --yes \
-    gettext-base socat xvfb x11vnc sshpass openssh-client sudo telnet && \
+    gettext-base socat xvfb x11vnc sshpass openssh-client telnet && \
     break; \
     [ "$attempt" = 3 ] && exit 1; \
     echo ".> apt failed, refreshing indices and retrying (attempt ${attempt})"; \
@@ -126,7 +126,6 @@ RUN for attempt in 1 2 3; do \
   ;fi && \
   groupadd --gid ${USER_GID} ibgateway && \
   useradd -ms /bin/bash --uid ${USER_ID} --gid ${USER_GID} ibgateway && \
-  echo "ibgateway ALL=(ALL) NOPASSWD:ALL" | tee -a /etc/sudoers && \
   chmod a+x ${SCRIPT_PATH}/*.sh && \
   mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
