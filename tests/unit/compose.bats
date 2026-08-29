@@ -119,3 +119,27 @@ port_vars() {
 		return 1
 	}
 }
+
+@test "compose: no bind mount depends on the caller's working directory" {
+	# ${PWD} in a compose file interpolates from the *shell*, not from .env -
+	# a shell always exports PWD, and compose gives the environment precedence
+	# over the .env file, so the `PWD=~` that sat in .env could never take
+	# effect. Mounts therefore followed the current directory rather than the
+	# project: `docker compose -f <repo>/docker-compose.yml config` run from
+	# /tmp resolved the bastion's read-only /etc/passwd, /etc/shadow and
+	# /etc/ssh mounts to /tmp/data/... and validated happily. Measured
+	# 2026-08-30; see docs/OPEN_ITEMS.md #14.
+	#
+	# A relative path has no such failure mode: compose resolves it against the
+	# project directory, which is the compose file's own directory unless
+	# --project-directory says otherwise.
+	local f hits=''
+	for f in "${ROOT}/docker-compose.yml" "${ROOT}/bastion/docker-compose.yml"; do
+		hits="${hits}$(grep -n 'PWD' "$f" | sed "s|^|  ${f#"${ROOT}/"}:|" || true)"
+	done
+	[ -z "$hits" ] || {
+		echo "these mounts follow the caller's cwd; use ./ so they follow the project:"
+		echo "$hits"
+		return 1
+	}
+}

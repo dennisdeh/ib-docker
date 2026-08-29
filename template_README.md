@@ -258,11 +258,11 @@ services:
       X_SCRIPTS: ${X_SCRIPTS:-}
       IBC_SCRIPTS: ${IBC_SCRIPTS:-}
 #    volumes:
-#      - ${PWD}/jts.ini:/home/ibgateway/Jts/jts.ini
-#      - ${PWD}/config.ini:/home/ibgateway/ibc/config.ini
-#      - ${PWD}/tws_settings/:${TWS_SETTINGS_PATH:-/home/ibgateway/tws_settings}
-#      - ${PWD}/ssh/:/home/ibgateway/.ssh
-#      - ${PWD}/init-scripts:/home/ibgateway/init-scripts
+#      - ./jts.ini:/home/ibgateway/Jts/jts.ini
+#      - ./config.ini:/home/ibgateway/ibc/config.ini
+#      - ./tws_settings/:${TWS_SETTINGS_PATH:-/home/ibgateway/tws_settings}
+#      - ./ssh/:/home/ibgateway/.ssh
+#      - ./init-scripts:/home/ibgateway/init-scripts
     ports:
       - "127.0.0.1:4001:4003"
       - "127.0.0.1:4002:4004"
@@ -493,10 +493,10 @@ Sample settings:
       - CUSTOM_CONFIG: yes
 ...
     volumes:
-      - ${PWD}/config.ini:/home/ibgateway/ibc/config.ini
-      - ${PWD}/jts.ini:/home/ibgateway/Jts/jts.ini # for IB Gateway
-      - ${PWD}/jts.ini:/opt/ibkr/jts.ini # for TWS
-      - ${PWD}/config.ini:/opt/ibc/config.ini # for TWS
+      - ./config.ini:/home/ibgateway/ibc/config.ini
+      - ./jts.ini:/home/ibgateway/Jts/jts.ini # for IB Gateway
+      - ./jts.ini:/opt/ibkr/jts.ini # for TWS
+      - ./config.ini:/opt/ibc/config.ini # for TWS
 ...
 ```
 
@@ -512,8 +512,8 @@ You can preserve IB Gateway configuration by setting environment variable
       - TWS_SETTINGS_PATH: /config/tws_settings # tws rdesktop
 ...
     volumes:
-      - ${PWD}/tws_settings:/home/ibgateway/tws_settings # IB Gateway
-      - ${PWD}/config:/config # for TWS we use linuxserver /config volume
+      - ./tws_settings:/home/ibgateway/tws_settings # IB Gateway
+      - ./config:/config # for TWS we use linuxserver /config volume
 ...
 
 ```
@@ -548,7 +548,7 @@ and a volume in `docker-compose.yml`
 
 ```yaml
   volume:
-    - ${PWD}/init-scripts:/home/ibgateway/init-scripts
+    - ./init-scripts:/home/ibgateway/init-scripts
 ```
 
 For TWS you can set your `.env` file as in the example and create a directory
@@ -726,8 +726,8 @@ to `ib-docker` container. This is achieved through a volume mount
 ```yaml
 ...
     volumes:
-      - ${PWD}/ssh:/home/ibgateway/.ssh # IB Gateway
-      - ${PWD}/config/ssh:/config/.ssh # TWS
+      - ./ssh:/home/ibgateway/.ssh # IB Gateway
+      - ./config/ssh:/config/.ssh # TWS
 ...
 ```
 

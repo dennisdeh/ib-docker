@@ -53,11 +53,11 @@ services:
       X_SCRIPTS: ${X_SCRIPTS:-}
       IBC_SCRIPTS: ${IBC_SCRIPTS:-}
     volumes:
-        - ${PWD}/ssh/:/home/ibgateway/.ssh
-  #      - ${PWD}/jts.ini:/home/ibgateway/Jts/jts.ini
-  #      - ${PWD}/config.ini:/home/ibgateway/ibc/config.ini
-  #      - ${PWD}/tws_settings/:${TWS_SETTINGS_PATH:-/home/ibgateway/tws_settings}
-  #      - ${PWD}/scripts:/home/ibgateway/init-scripts
+        - ./ssh/:/home/ibgateway/.ssh
+  #      - ./jts.ini:/home/ibgateway/Jts/jts.ini
+  #      - ./config.ini:/home/ibgateway/ibc/config.ini
+  #      - ./tws_settings/:${TWS_SETTINGS_PATH:-/home/ibgateway/tws_settings}
+  #      - ./scripts:/home/ibgateway/init-scripts
     ports:
       - "127.0.0.1:${PORT_HOST_TWS_LIVE:-4001}:4003"
       - "127.0.0.1:${PORT_HOST_TWS_PAPER:-4002}:4004"
@@ -177,11 +177,11 @@ services:
       SSHD_USER_CA: ${SSHD_USER_CA:-}
       BANNER_ENABLED: ${BANNER_ENABLED:-no}
     volumes:
-      - $PWD/data/etc/passwd:/etc/passwd:ro
-      - $PWD/data/etc/shadow:/etc/shadow:ro
-      - $PWD/data/etc/group:/etc/group:ro
-      - $PWD/data/etc/ssh:/etc/ssh:ro
-      - $PWD/data/home:/home:ro
+      - ./data/etc/passwd:/etc/passwd:ro
+      - ./data/etc/shadow:/etc/shadow:ro
+      - ./data/etc/group:/etc/group:ro
+      - ./data/etc/ssh:/etc/ssh:ro
+      - ./data/home:/home:ro
 
 volumes:
   tws_tmp:

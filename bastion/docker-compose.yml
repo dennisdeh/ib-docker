@@ -34,8 +34,8 @@ services:
       - SSHD_USER_CA=${SSHD_USER_CA}
       - BANNER_ENABLED=${BANNER_ENABLED}
     volumes:
-      - $PWD/data/etc/passwd:/etc/passwd:ro
-      - $PWD/data/etc/shadow:/etc/shadow:ro
-      - $PWD/data/etc/group:/etc/group:ro
-      - $PWD/data/etc/ssh:/etc/ssh:ro
-      - $PWD/data/home:/home:ro
+      - ./data/etc/passwd:/etc/passwd:ro
+      - ./data/etc/shadow:/etc/shadow:ro
+      - ./data/etc/group:/etc/group:ro
+      - ./data/etc/ssh:/etc/ssh:ro
+      - ./data/home:/home:ro

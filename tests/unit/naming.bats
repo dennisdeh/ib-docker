@@ -127,10 +127,11 @@ readme_vars() {
 }
 
 @test "README.md leaves none of the substituted placeholders behind" {
-	# Only these are substituted. The README documents `${PWD}`, `${IB_APP}`,
-	# `${IBC_VERSION}` and `${IB_GATEWAY_VERSION}` as literal text naming a
-	# variable the reader sets, so a blanket search for `${...}` would fail on
-	# its own examples.
+	# Only these are substituted. The README documents `${IB_APP}`,
+	# `${IBC_VERSION}`, `${IB_GATEWAY_VERSION}` and `${TWS_SETTINGS_PATH}` as
+	# literal text naming a variable the reader sets, so a blanket search for
+	# `${...}` would fail on its own examples. `${PWD}` was among them until the
+	# bind mounts went relative on 2026-08-30 - see docs/OPEN_ITEMS.md #14.
 	run grep -nE '\$\{(LATEST_VERSION|LATEST_MINOR|LATEST_IBC|STABLE_VERSION|STABLE_MINOR|STABLE_IBC|BASTION_VERSION)\}' \
 		"${ROOT}/README.md"
 	[ "$status" -ne 0 ] || {

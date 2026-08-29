@@ -321,11 +321,11 @@ services:
       - SSHD_USER_CA=${SSHD_USER_CA}
       - BANNER_ENABLED=${BANNER_ENABLED}
     volumes:
-      - $PWD/data/etc/passwd:/etc/passwd:ro
-      - $PWD/data/etc/shadow:/etc/shadow:ro
-      - $PWD/data/etc/group:/etc/group:ro
-      - $PWD/data/etc/ssh:/etc/ssh:ro
-      - $PWD/data/home:/home:ro
+      - ./data/etc/passwd:/etc/passwd:ro
+      - ./data/etc/shadow:/etc/shadow:ro
+      - ./data/etc/group:/etc/group:ro
+      - ./data/etc/ssh:/etc/ssh:ro
+      - ./data/home:/home:ro
 ```
 
 Verify that everything has been set correctly (did you set .env file?)
@@ -589,11 +589,11 @@ Three things about this are easy to get wrong:
 
   ```yaml
       volumes:
-        - $PWD/data/etc/passwd:/etc/passwd:ro
-        - $PWD/data/etc/shadow:/etc/shadow:ro
-        - $PWD/data/etc/group:/etc/group:ro
-        - $PWD/data/etc/ssh:/etc/ssh:ro
-        - $PWD/data/home:/home # remove :ro
+        - ./data/etc/passwd:/etc/passwd:ro
+        - ./data/etc/shadow:/etc/shadow:ro
+        - ./data/etc/group:/etc/group:ro
+        - ./data/etc/ssh:/etc/ssh:ro
+        - ./data/home:/home # remove :ro
   ```
 
   This does not weaken the provisioning checksum, which covers `/etc` only —

@@ -69,9 +69,13 @@ cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-docker"
 docker compose config   # validates .env + compose wiring without starting anything
 ```
 
-- All scripts and compose files resolve paths relative to **the repo root**, and
-  several volume mounts use `$PWD` — which is read from `.env`, not from the
-  shell. Running compose from a subdirectory silently mounts the wrong paths.
+- All scripts and compose files resolve paths relative to **the repo root**.
+  The volume mounts are relative (`./ssh`), which compose resolves against the
+  **project directory** — the compose file's own directory unless
+  `--project-directory` says otherwise — so they no longer depend on where you
+  run it from. They used `${PWD}` until 2026-08-30; that interpolates from the
+  **shell**, not from `.env`, because compose gives the environment precedence
+  and a shell always exports `PWD`. See `docs/OPEN_ITEMS.md` #14.
 - **Not installed on this machine:** `gh`, `pre-commit`, `bats`, and none of the
   linter binaries. `tests/run.sh` runs `bats` as a container for you. The hook set is configured to need only Docker (every linter
   uses its `*-docker` variant), so `pre-commit` itself is the one thing to add:
@@ -145,8 +149,9 @@ makes the container refuse to start — that is the feature, not a bug.
   until the next IB Gateway release, then vanishes without a trace.
   `tests/unit/naming.bats` reproduces the substitution and diffs the result, so
   an edit made in the wrong file fails in the same commit. Anything else of the
-  `${...}` form is left literal on purpose — the README documents `${PWD}` and
-  `${IB_GATEWAY_VERSION}` as text the reader types.
+  `${...}` form is left literal on purpose — the README documents
+  `${IB_GATEWAY_VERSION}`, `${IB_APP}` and `${TWS_SETTINGS_PATH}` as text the
+  reader types.
 - **The IBC and bastion versions in that table are read per image**, from
   `latest/Dockerfile`, `stable/Dockerfile` and `bastion/Dockerfile` — not once
   from `Dockerfile.template`. One number across all rows was wrong for `stable`
