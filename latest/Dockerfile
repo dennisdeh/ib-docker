@@ -39,13 +39,14 @@ WORKDIR /tmp/setup
 # fails the emulated leg with apt's exit 100. A fresh `apt-get update` on the
 # next attempt re-resolves, usually against a different mirror node. See
 # docs/OPEN_ITEMS.md #19.
-RUN for attempt in 1 2 3; do \
+RUN for attempt in 1 2 3 4 5; do \
     apt-get update -y && \
     apt-get install --no-install-recommends --yes curl ca-certificates unzip && \
     break; \
-    [ "$attempt" = 3 ] && exit 1; \
-    echo ".> apt failed, refreshing indices and retrying (attempt ${attempt})"; \
-    sleep 15; \
+    [ "$attempt" = 5 ] && exit 1; \
+    echo ".> apt failed, dropping the index and retrying (attempt ${attempt})"; \
+    rm -rf /var/lib/apt/lists/*; \
+    sleep "$((attempt * 20))"; \
   done && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* && \
@@ -109,15 +110,16 @@ COPY --from=setup /usr/local/ /usr/local/
 COPY --chown=${USER_ID}:${USER_GID} --from=setup /root/ ${HOME}
 
 # Prepare system
-RUN for attempt in 1 2 3; do \
+RUN for attempt in 1 2 3 4 5; do \
     apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install --no-install-recommends --yes \
     gettext-base socat xvfb x11vnc sshpass openssh-client telnet && \
     break; \
-    [ "$attempt" = 3 ] && exit 1; \
-    echo ".> apt failed, refreshing indices and retrying (attempt ${attempt})"; \
-    sleep 15; \
+    [ "$attempt" = 5 ] && exit 1; \
+    echo ".> apt failed, dropping the index and retrying (attempt ${attempt})"; \
+    rm -rf /var/lib/apt/lists/*; \
+    sleep "$((attempt * 20))"; \
   done && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* && \

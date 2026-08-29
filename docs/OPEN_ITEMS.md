@@ -26,7 +26,6 @@ actually outstanding.
 
 | # | item | where | why it is still here |
 |---|---|---|---|
-| 24 | the `linux/arm64` `apt-get` leg fails while Ubuntu is mid-publication — mitigated, not cured | Medium | The cause is upstream: Canonical publishes an index before the `ports.ubuntu.com` pool has the package. The retry loop already turns it from a failed release into a slower one. Curing it means pinning or mirroring the archive, which is a much larger change than the fault deserves. |
 
 Fixed on 2026-08-29, each with a test shown red against the unfixed code:
 **#10** (VNC password out of the process list), **#11** (the public RDP default
@@ -41,7 +40,9 @@ bastion build context) and **#30** (the gateway's version label, which named no
 channel). **#9** was closed the same day, but by a decision rather than a
 finding: it had been waiting on one since 2026-08-25. **#31** was found while
 verifying #9 and closed after it. **#14** went with them, once measuring it
-showed the premise it had been parked on was backwards.
+showed the premise it had been parked on was backwards, and **#24**'s
+mitigation was hardened and extended to the one image that had none — what is
+left of it is a decision, `DECISIONS.md` #34, not an outstanding task.
 
 Everything else below is marked **FIXED** or **MITIGATED** and is kept as the
 record of what changed and how it was verified.
@@ -376,7 +377,7 @@ redundant; its PR can be closed. `detect-releases.yml` will not reopen one,
 because it keys off the existence of the `ibgateway-stable@10.45.1j` release,
 which already exists.
 
-### 24. `apt-get` fails on the `linux/arm64` leg when Ubuntu is mid-publication — **MITIGATED**
+### 24. `apt-get` fails on the `linux/arm64` leg when Ubuntu is mid-publication — **MITIGATED; hardened 2026-08-30**
 
 *Numbered 19 until 2026-08-28; that number belongs to the bastion publishing
 item in the Low table.*
@@ -402,12 +403,29 @@ any build of this tree, `master` included, during the publication window. The
 window closed on its own: a rebuild of the identical tree a short while later
 fetched the package with no error and no retry.
 
-**Mitigation, not a cure.** Each `apt-get` block in `Dockerfile.template` and
-`Dockerfile.tws.template` now retries up to three times, running `apt-get
-update` again between attempts so the index is re-read and DNS re-resolves,
-usually onto a different mirror node, and `exit 1` if all three fail rather than
-falling out of the loop silently. A sustained pool outage will still fail the
-build, correctly.
+**Mitigation, not a cure**, and it stays that way on purpose — see
+`DECISIONS.md` #34 for why pinning a snapshot is the wrong trade.
+
+Each `apt-get` block that installs packages retries, running `apt-get update`
+again between attempts so the index is re-read and DNS re-resolves, usually onto
+a different mirror node, and `exit 1` when the attempts run out rather than
+falling out of the loop with nothing installed. A sustained pool outage still
+fails the build, correctly.
+
+*Hardened on 2026-08-30, in three ways.* **`bastion/Dockerfile` had no retry at
+all** while being built for `linux/arm64` by both `build.yml` and
+`publish-bastion.yml` — the same exposure with none of the mitigation, which is
+the part of this item that was actually still open. The attempts went from three
+to five, with the wait growing 20s, 40s, 60s, 80s instead of a flat 15s, so the
+loop now spans about 3.5 minutes of a publication window rather than 30 seconds.
+And each retry now **drops `/var/lib/apt/lists/` before re-running `apt-get
+update`**: a plain re-run revalidates and a mirror answering `304 Not Modified`
+hands back the same index naming the same missing `.deb`, so the retry could
+reproduce the failure it was meant to escape. `tests/unit/dockerfile.bats` fails
+on an `apt-get install` in a RUN block with no retry loop, and on a loop whose
+guard does not name its last attempt — a guard set higher than the loop runs
+would let it fall through with the packages not installed, which is the silent
+half of this.
 
 **Reading a red `arm64` leg.** Three quite different causes, told apart by the
 exit code and how far it got:

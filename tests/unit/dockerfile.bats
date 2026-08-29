@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016  # $attempt is literal text inside a sed pattern
 #
 # The generated channel directories, and the two properties of the image build
 # that a build on an amd64 machine cannot demonstrate: the installer is chosen
@@ -264,6 +265,57 @@ ibc_pins() {
 	done
 	[ -z "$bad" ] || {
 		echo "a Dockerfile grants sudo rights; these images run unprivileged:${bad}"
+		return 1
+	}
+}
+
+# Every RUN block, one per line, with its continuations folded in. A retry that
+# covers the wrong block is the same as no retry.
+run_blocks() {
+	awk '
+		/^RUN /            { inrun = 1; block = "" }
+		inrun              { block = block " " $0 }
+		inrun && !/\\[ \t]*$/ { print block; inrun = 0 }
+	' "$1"
+}
+
+@test "build: every apt-get install retries, and stops when the retries run out" {
+	# ports.ubuntu.com - the aarch64 mirror, and only it - intermittently serves
+	# an index naming a .deb its pool 404s on, and apt exits 100. Nothing here
+	# causes it and nothing here can prevent it, so every block that installs
+	# packages retries around it. See docs/OPEN_ITEMS.md #24.
+	#
+	# bastion/Dockerfile had no retry at all until 2026-08-30, while being built
+	# for linux/arm64 by both build.yml and publish-bastion.yml - the same
+	# exposure with none of the mitigation.
+	local f block bad=''
+	for f in "${ROOT}/Dockerfile.template" "${ROOT}/Dockerfile.tws.template" \
+		"${ROOT}/bastion/Dockerfile" "${ROOT}/tests/Dockerfile"; do
+		while IFS= read -r block; do
+			case "$block" in
+			*"apt-get install"*)
+				case "$block" in
+				*"for attempt in"*) ;;
+				*) bad="${bad}
+  ${f#"${ROOT}/"}: an apt-get install with no retry loop" ;;
+				esac
+				;;
+			esac
+		done < <(run_blocks "$f")
+
+		# The guard that ends the loop has to name the last attempt. Too low and
+		# it merely retries less; too high and the loop *falls through* with the
+		# packages not installed and the build carries on regardless, which is
+		# the silent half of this.
+		local last guard
+		guard="$(sed -n 's/.*\[ "$attempt" = \([0-9]*\) \].*/\1/p' "$f" | head -1)"
+		while IFS= read -r last; do
+			[ "$last" = "$guard" ] || bad="${bad}
+  ${f#"${ROOT}/"}: loop runs to ${last} but gives up at ${guard:-<none>}"
+		done < <(sed -n 's/.*for attempt in \([0-9 ]*\);.*/\1/p' "$f" | awk '{print $NF}')
+	done
+	[ -z "$bad" ] || {
+		echo "apt blocks that can fail a build for a reason upstream fixes on its own:${bad}"
 		return 1
 	}
 }

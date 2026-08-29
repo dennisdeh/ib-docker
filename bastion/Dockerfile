@@ -12,15 +12,27 @@ ARG APT_PROXY
 # "-resolute".
 ARG IMAGE_VERSION=2604.02
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# apt is retried because ports.ubuntu.com - the aarch64 mirror, and only it -
+# intermittently serves an index referencing a .deb its pool 404s on, which
+# fails the emulated leg with apt's exit 100. This image is built for arm64 by
+# build.yml and publish-bastion.yml, so it has the same exposure as the gateway
+# and went without the mitigation until 2026-08-30. See docs/OPEN_ITEMS.md #24.
 # hadolint ignore=DL3008,SC2028
 RUN if [ -n "$APT_PROXY" ]; then \
       echo 'Acquire::http { Proxy "'$APT_PROXY'"; }'  \
       | tee /etc/apt/apt.conf.d/01proxy \
     ;fi && \
-    apt-get update && \
-    apt-get upgrade -yq && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-    openssh-server libpam-google-authenticator qrencode util-linux && \
+    for attempt in 1 2 3 4 5; do \
+      apt-get update && \
+      apt-get upgrade -yq && \
+      DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      openssh-server libpam-google-authenticator qrencode util-linux && \
+      break; \
+      [ "$attempt" = 5 ] && exit 1; \
+      echo ".> apt failed, dropping the index and retrying (attempt ${attempt})"; \
+      rm -rf /var/lib/apt/lists/*; \
+      sleep "$((attempt * 20))"; \
+    done && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /run/sshd && \
     if id ubuntu >/dev/null 2>&1; then \
