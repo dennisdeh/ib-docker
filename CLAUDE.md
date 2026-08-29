@@ -4,7 +4,7 @@
 what the code cannot — which command to trust, what "done" means, and which
 plausible-looking action is the wrong one.*
 
-*Last updated: 2026-08-29*
+*Last updated: 2026-08-30*
 
 ---
 
@@ -451,12 +451,17 @@ trusting it — see *Debugging*.
   **calls `publish.yml`**, which pushes `ib-gateway` and `tws-rdesktop` to
   `ghcr.io/dennisdeh` tagged `<version>`, `<major.minor>` and `<channel>`.
   Nobody has to merge or tag for the images to appear. *(In effect 2026-08-26.)*
-  - **`bastion` is published by the same workflow**, tagged with the
+  - **`bastion` is published by `publish-bastion.yml`**, tagged with the
     `ARG IMAGE_VERSION` its own Dockerfile declares — it carries no IB version,
     so an IB tag on it would mean nothing. That is the one line to bump, and it
-    is what `publish.yml` and `deploy/provision.sh` both read. All three images
+    is what that workflow and `deploy/provision.sh` both read. All three images
     are published so a host can be provisioned without a checkout to build from.
-    *(2026-08-27; see `DECISIONS.md` #22.)*
+    **It has its own trigger**: a push to `master` touching `bastion/**`, so a
+    fix there no longer waits for an unrelated IB release. `publish.yml` also
+    calls it, which is what refreshes the image against its Ubuntu base. An
+    unbumped `IMAGE_VERSION` overwrites its tag — right for a base refresh,
+    wrong for a behaviour change. *(2026-08-27, own trigger 2026-08-30; see
+    `DECISIONS.md` #22 and `OPEN_ITEMS.md` #31.)*
   - The images are built from the **bot's own commit**, not from `master` — see
     `docs/DECISIONS.md` #14 for why, and for why it is a `workflow_call` rather
     than a pushed `v*` tag.
@@ -514,12 +519,13 @@ trusting it — see *Debugging*.
   pinned to a version whose GitHub release carries only the x64 asset cannot
   build `linux/arm64` at all. `detect-releases.yml` uploads both
   (`archs="x64 arm"`); a few releases from before that change carry the x64
-  asset only. **`PLATFORMS` is declared twice and the two must agree** — in
-  `build.yml` and in `publish.yml`. If they drift, CI passes and the release
-  then fails on the platform only one of them builds;
+  asset only. **`PLATFORMS` is declared three times and all three must agree** —
+  in `build.yml`, `publish.yml` and `publish-bastion.yml`. If they drift, CI
+  passes and the release then fails on the platform only one of them builds;
   `tests/unit/workflows.bats` fails on that, and on `linux/arm64` being dropped.
-  Both channels are on versions that have the arm asset as of 2026-08-25
-  (`10.48.1e` latest, `10.45.1j` stable). See `docs/OPEN_ITEMS.md` #18.
+  Both channels are on versions whose releases carry both assets, re-checked
+  against the releases API on 2026-08-30 (`10.50.1e` latest, `10.45.1j`
+  stable). See `docs/OPEN_ITEMS.md` #18.
 
 ---
 

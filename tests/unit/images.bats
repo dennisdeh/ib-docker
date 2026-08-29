@@ -182,9 +182,10 @@ runtime_stage() {
 			echo "docker-compose.yml does not build ${img}"
 			return 1
 		}
-		run grep -qF "$img" "${ROOT}/.github/workflows/publish.yml"
-		[ "$status" -eq 0 ] || {
-			echo "publish.yml does not publish ${img}"
+		# The bastion is published by its own workflow, which publish.yml calls.
+		grep -qF "$img" "${ROOT}/.github/workflows/publish.yml" ||
+			grep -qF "$img" "${ROOT}/.github/workflows/publish-bastion.yml" || {
+			echo "no publish workflow pushes ${img}"
 			return 1
 		}
 	done

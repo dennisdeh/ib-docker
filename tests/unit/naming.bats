@@ -73,7 +73,8 @@ tree_grep() {
 	[ "$status" -eq 0 ]
 	run grep -rqF 'ghcr.io/dennisdeh/tws-rdesktop' "${ROOT}/.github/workflows/publish.yml"
 	[ "$status" -eq 0 ]
-	run grep -rqF 'ghcr.io/dennisdeh/bastion' "${ROOT}/.github/workflows/publish.yml"
+	# The bastion publishes from its own workflow since 2026-08-30.
+	run grep -rqF 'ghcr.io/dennisdeh/bastion' "${ROOT}/.github/workflows/publish-bastion.yml"
 	[ "$status" -eq 0 ]
 }
 

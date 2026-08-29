@@ -78,19 +78,23 @@ setup() {
 # only build linux/arm64 for a version whose release carries the arm installer.
 # See docs/OPEN_ITEMS.md #18.
 @test "workflows: build and publish declare the same platforms, including arm64" {
-	local build_p publish_p
+	# Three declarations since publish-bastion.yml split out on 2026-08-30, and
+	# all three have to agree - the bastion is built for both architectures too.
+	local build_p f other
 	build_p="$(sed -n 's/^  PLATFORMS: //p' "${WORKFLOWS}/build.yml")"
-	publish_p="$(sed -n 's/^  PLATFORMS: //p' "${WORKFLOWS}/publish.yml")"
 	[ -n "$build_p" ] || {
 		echo "build.yml declares no PLATFORMS"
 		return 1
 	}
-	[ "$build_p" = "$publish_p" ] || {
-		echo "build.yml and publish.yml disagree on platforms"
-		echo "build.yml:   $build_p"
-		echo "publish.yml: $publish_p"
-		return 1
-	}
+	for f in publish.yml publish-bastion.yml; do
+		other="$(sed -n 's/^  PLATFORMS: //p' "${WORKFLOWS}/${f}")"
+		[ "$build_p" = "$other" ] || {
+			echo "build.yml and ${f} disagree on platforms"
+			echo "build.yml: $build_p"
+			echo "${f}: $other"
+			return 1
+		}
+	done
 	case "$build_p" in
 	*linux/arm64*) ;;
 	*)
@@ -102,7 +106,8 @@ setup() {
 
 @test "workflows: no build step hard-codes its platform list" {
 	local f
-	for f in "${WORKFLOWS}/build.yml" "${WORKFLOWS}/publish.yml"; do
+	for f in "${WORKFLOWS}/build.yml" "${WORKFLOWS}/publish.yml" \
+		"${WORKFLOWS}/publish-bastion.yml"; do
 		run grep -n 'platforms: linux/' "$f"
 		[ "$status" -ne 0 ] || {
 			echo "$(basename "$f") pins platforms inline; drive them from the channel: $output"
@@ -167,18 +172,54 @@ line_of() {
 	run cat "${WORKFLOWS}/publish.yml"
 	[[ $output == *"ghcr.io/dennisdeh/ib-gateway"* ]]
 	[[ $output == *"ghcr.io/dennisdeh/tws-rdesktop"* ]]
-	# The bastion too, so a host can be provisioned without a checkout to
-	# build anything from. See docs/DECISIONS.md.
-	[[ $output == *"ghcr.io/dennisdeh/bastion"* ]]
-
 	run grep -c 'push: true' "${WORKFLOWS}/publish.yml"
-	[ "$output" = "3" ]
+	[ "$output" = "2" ]
+
+	# The bastion too, so a host can be provisioned without a checkout to build
+	# anything from - from its own workflow since 2026-08-30, which publish.yml
+	# calls. See docs/DECISIONS.md #22.
+	run cat "${WORKFLOWS}/publish-bastion.yml"
+	[[ $output == *"ghcr.io/dennisdeh/bastion"* ]]
+	run grep -c 'push: true' "${WORKFLOWS}/publish-bastion.yml"
+	[ "$output" = "1" ]
+	run grep -qF 'uses: ./.github/workflows/publish-bastion.yml' "${WORKFLOWS}/publish.yml"
+	[ "$status" -eq 0 ] || {
+		echo "publish.yml no longer calls publish-bastion.yml, so an IB release"
+		echo "would stop refreshing the bastion against its Ubuntu base"
+		return 1
+	}
+}
+
+@test "publish-bastion: a change under bastion/ publishes it" {
+	# The gap this closes: the bastion had no trigger of its own, so the CA fix
+	# of 2026-08-29 sat unpublished until an unrelated IB Gateway release would
+	# have carried it, and four bastion_ca.bats cases were red against the
+	# published image meanwhile. See docs/OPEN_ITEMS.md #31.
+	local f="${WORKFLOWS}/publish-bastion.yml"
+	run grep -c '^  push:' "$f"
+	[ "$output" = "1" ]
+	run grep -qF "      - 'bastion/**'" "$f"
+	[ "$status" -eq 0 ] || {
+		echo "publish-bastion.yml does not watch bastion/**"
+		return 1
+	}
+	# Without master here the trigger would fire on every branch and publish
+	# unreviewed work over the tag.
+	run grep -qE '^      - master$' "$f"
+	[ "$status" -eq 0 ] || {
+		echo "publish-bastion.yml's push trigger is not restricted to master"
+		return 1
+	}
+	# The permission it needs, declared by the workflow itself rather than
+	# borrowed from publish.yml, which is what let it stand alone.
+	run grep -qE '^      packages: write' "$f"
+	[ "$status" -eq 0 ]
 }
 
 @test "publish: the bastion is tagged with the version it declares" {
 	# It carries no IB version, so its tag comes from its own Dockerfile - the
 	# same shape as the channel version gate above.
-	run grep -qF "sed -n 's/^ARG IMAGE_VERSION=//p' bastion/Dockerfile" "${WORKFLOWS}/publish.yml"
+	run grep -qF "sed -n 's/^ARG IMAGE_VERSION=//p' bastion/Dockerfile" "${WORKFLOWS}/publish-bastion.yml"
 	[ "$status" -eq 0 ]
 	run grep -c 'ARG IMAGE_VERSION=' "${ROOT}/bastion/Dockerfile"
 	[ "$output" = "1" ]
@@ -205,7 +246,7 @@ line_of() {
 	# MIT, and wrong for the bastion, which is Apache-2.0: the published image
 	# read MIT until 2026-08-30 whatever bastion/Dockerfile said. Naming it in
 	# the step's own `labels:` is what overrides the derived default.
-	run grep -q 'org.opencontainers.image.licenses=Apache-2.0' "${WORKFLOWS}/publish.yml"
+	run grep -q 'org.opencontainers.image.licenses=Apache-2.0' "${WORKFLOWS}/publish-bastion.yml"
 	[ "$status" -eq 0 ] || {
 		echo "the bastion meta step must pin org.opencontainers.image.licenses=Apache-2.0,"
 		echo "or metadata-action labels the published image MIT from the repository licence"

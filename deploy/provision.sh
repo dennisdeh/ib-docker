@@ -349,7 +349,7 @@ bastion_users() {
 	printf '%s' "$users"
 }
 
-# The bastion's own version, which `publish.yml` also reads to tag the image.
+# The bastion's own version, which `publish-bastion.yml` also reads to tag it.
 resolve_bastion_image() {
 	[ -z "$BASTION_IMAGE" ] || return 0
 	local ver=''

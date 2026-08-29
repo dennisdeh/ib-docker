@@ -171,7 +171,7 @@ The following variables are available in the .env file
 | SSHD_USER_CA | '/etc/ssh/user_ca.pub' | public CA key. You will need to copy it into ./data/etc/ssh directory |
 | CONTAINER_NAME_BASTION | bastion | Name given to the container. |
 | DNS | blank | Optional DNS server for the container, so clients can use names rather than IP addresses. Commented out in `docker-compose.yml` by default. |
-| IMAGE_VERSION | 2604.01 | The image's own version, independent of any IB Gateway release. `ARG IMAGE_VERSION` in the `Dockerfile` is the declaration; `.github/workflows/publish.yml` reads it to tag the published image and `deploy/provision.sh` reads it to pick which tag to pull, so **that one line is the place to bump it**. |
+| IMAGE_VERSION | 2604.02 | The image's own version, independent of any IB Gateway release. `ARG IMAGE_VERSION` in the `Dockerfile` is the declaration; `.github/workflows/publish-bastion.yml` reads it to tag the published image and `deploy/provision.sh` reads it to pick which tag to pull, so **that one line is the place to bump it**. Bump it for any change to this directory: a push to `master` under `bastion/` publishes, and an unbumped version overwrites the tag it already has. |
 | BASE_VERSION | resolute | Ubuntu base image. Used during build. |
 
 After you have set your .env file check that the configuration is correct.
@@ -205,8 +205,10 @@ this directory rather than pulling the published tag over what it just built.
 If defined, `APT_PROXY` is used during build time to speed the build up.
 
 **Bumping the image:** edit `ARG IMAGE_VERSION` in the `Dockerfile`. That
-declaration is what `publish.yml` tags the published image with and what
-`deploy/provision.sh` pulls, so it is the single place to change. It was once
+declaration is what `publish-bastion.yml` tags the published image with and
+what `deploy/provision.sh` pulls, so it is the single place to change. A push
+to `master` touching `bastion/` publishes the image, so a change that leaves
+the version alone overwrites the tag rather than adding one. It was once
 used by a `LABEL` without being declared at all, which made every image report
 its version as `-resolute`.
 

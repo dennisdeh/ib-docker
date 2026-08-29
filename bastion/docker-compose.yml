@@ -10,7 +10,8 @@ services:
         BASE_VERSION: ${BASE_VERSION}
         IMAGE_VERSION: ${IMAGE_VERSION}
     restart: unless-stopped
-    # Same name the root compose file and publish.yml use. `pull_policy: build`
+    # Same name the root compose file and publish-bastion.yml use.
+    # `pull_policy: build`
     # keeps this from pulling the published ghcr.io tag over the image built
     # here.
     pull_policy: build

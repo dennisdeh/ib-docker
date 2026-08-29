@@ -4,12 +4,13 @@ FROM ubuntu:${BASE_VERSION}
 ARG BASE_VERSION
 ARG APT_PROXY
 # The image's own version, independent of any IB Gateway release. This
-# declaration is what `publish.yml` reads to tag the published image, the same
-# way it reads ENV IB_GATEWAY_VERSION from a channel Dockerfile - so this line
-# is the one place to bump it. It was previously used by the LABEL below
+# declaration is what `publish-bastion.yml` reads to tag the published image,
+# the same way publish.yml reads ENV IB_GATEWAY_VERSION from a channel
+# Dockerfile - so this line is the one place to bump it, and a push to master
+# touching this directory publishes whatever it says. It was previously used by the LABEL below
 # without ever being declared, which made every image report version
 # "-resolute".
-ARG IMAGE_VERSION=2604.01
+ARG IMAGE_VERSION=2604.02
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008,SC2028
 RUN if [ -n "$APT_PROXY" ]; then \

@@ -1,0 +1,145 @@
+name: "Publish Bastion"
+
+# The ssh bastion, published on its own.
+#
+# It carries no IB Gateway version and changes on its own schedule, so riding
+# on publish.yml alone meant a change under bastion/ reached ghcr.io only when
+# Interactive Brokers happened to release: the CA fix of 2026-08-29 was still
+# unpublished four days later, and four tests/container/bastion_ca.bats cases
+# were red against the published image for the whole of it. See
+# docs/OPEN_ITEMS.md #31.
+#
+# Three ways in:
+#
+#   push to master     touching bastion/**, which is the trigger that closes
+#                      that gap. This file is in the path list too, so a change
+#                      to how the image is published republishes it - which is
+#                      the only way this workflow gets exercised at all.
+#   workflow_call      from publish.yml, so an IB Gateway release still
+#                      refreshes the image against its updated Ubuntu base.
+#   workflow_dispatch  publish it by hand.
+#
+# A change that does not bump `ARG IMAGE_VERSION` overwrites that tag rather
+# than adding one. That is deliberate for a base refresh and wrong for a
+# behaviour change, so bump it - see docs/DECISIONS.md #22.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'bastion/**'
+      - '.github/workflows/publish-bastion.yml'
+
+env:
+  # Must stay identical to build.yml's and publish.yml's list, or CI passes and
+  # the release then fails on the platform only one of them builds.
+  # tests/unit/workflows.bats fails on a disagreement.
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  publish-bastion:
+    name: Publish the ssh bastion
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write   # push to ghcr.io
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Resolve version and revision
+        id: bastion
+        run: |
+          # The one declaration this image is tagged from. It went undeclared
+          # once, and every image then reported its version as "-resolute".
+          version="$(sed -n 's/^ARG IMAGE_VERSION=//p' bastion/Dockerfile | head -1)"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::bastion/Dockerfile declares no usable ARG IMAGE_VERSION: '${version}'"
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          # ghcr.io is the registry this repository owns and is never optional.
+          # Docker Hub needs secrets a fork will not have, and an unconditional
+          # login there would fail the whole publish over a mirror.
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            {
+              echo "configured=true"
+              echo "images=ghcr.io/dennisdeh/bastion,dennisdeh/bastion"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "configured=false"
+              echo "images=ghcr.io/dennisdeh/bastion"
+            } >> "$GITHUB_OUTPUT"
+            echo "::notice::Docker Hub secrets are not set; publishing to ghcr.io only"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: ${{ env.PLATFORMS }}
+
+      - name: Log in to the GitHub container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: ${{ steps.dockerhub.outputs.configured == 'true' }}
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker meta bastion
+        id: meta-bastion
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.dockerhub.outputs.images }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=${{ steps.bastion.outputs.version }}
+            type=raw,value=latest
+          # metadata-action derives `licenses` from the repository - MIT - and
+          # applies its labels over the Dockerfile's, so the bastion has to name
+          # its own here: bastion/ carries an Apache-2.0 LICENSE.txt.
+          labels: |
+            org.opencontainers.image.revision=${{ steps.bastion.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.bastion.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push bastion
+        uses: docker/build-push-action@v7
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          context: bastion
+          build-args: |
+            IMAGE_VERSION=${{ steps.bastion.outputs.version }}
+          cache-from: type=gha,scope=bastion
+          cache-to: type=gha,mode=max,scope=bastion
+          push: true
+          tags: ${{ steps.meta-bastion.outputs.tags }}
+          labels: ${{ steps.meta-bastion.outputs.labels }}
