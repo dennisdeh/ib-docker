@@ -48,6 +48,14 @@ tree_grep() {
 		-type f -exec grep -nE -- "$1" /dev/null {} + 2>/dev/null || true
 }
 
+# Everything from the last FROM to the end of the file: the stage that becomes
+# the image, and the only one whose ENV and ARG a LABEL down there can see. A
+# value set in an earlier stage is not inherited, and a global ARG declared
+# before the first FROM has to be re-declared after it to be visible at all.
+runtime_stage() {
+	awk '/^FROM /{start=NR} {line[NR]=$0} END{for (i=start; i<=NR; i++) print line[i]}' "$1"
+}
+
 @test "images: every compose service runs an image this repository builds" {
 	# `image:` lines only - `tags:` entries are build outputs and name the same
 	# references. A service pulling anything else would not be reproducible from
@@ -252,6 +260,35 @@ tree_grep() {
 	[ -z "$hits" ] || {
 		echo "the ghcr.io packages are public; pulling them needs no login:"
 		echo "$hits"
+		return 1
+	}
+}
+
+@test "images: every variable a runtime LABEL uses is declared in that stage" {
+	# Two of these files have already shipped an image labelling itself with an
+	# empty half. bastion/Dockerfile used ${IMAGE_VERSION} without declaring it
+	# and every image reported its version as "-resolute"; Dockerfile.template's
+	# LABEL reads IB_GATEWAY_RELEASE_CHANNEL while only its *setup* stage names a
+	# channel, and under the other spelling, so the label read "10.50.1e-" -
+	# measured 2026-08-30, see docs/OPEN_ITEMS.md #30. Neither was visible in a
+	# published image, because docker/metadata-action overwrites that label too;
+	# only a local build shows it, which is why nothing caught either one.
+	#
+	# The generated channel copies need no pass of their own: dockerfile.bats
+	# holds them byte for byte to these templates.
+	local f stage v bad=''
+	for f in $(source_dockerfiles); do
+		stage="$(runtime_stage "$f")"
+		for v in $(echo "$stage" | grep '^LABEL ' |
+			grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' | tr -d '${}' | sort -u); do
+			echo "$stage" | grep -qE "^(ENV|ARG) ${v}([= ]|\$)" ||
+				bad="${bad}
+  ${f#"${ROOT}/"}: \${${v}}"
+		done
+	done
+	[ -z "$bad" ] || {
+		echo "a LABEL in the final stage uses a variable that stage does not declare,"
+		echo "so it expands to empty:${bad}"
 		return 1
 	}
 }

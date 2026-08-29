@@ -80,6 +80,11 @@ COPY ./scripts /root/scripts
 FROM ubuntu:24.04
 
 ENV IB_GATEWAY_VERSION=10.45.1j
+# Read by the version LABEL at the end of this file, and by nothing else. The
+# setup stage's IB_GATEWAY_CHANNEL does not reach here - a later stage inherits
+# no variables - so the name has to be declared again; Dockerfile.tws.template
+# declares the same one for the same reason. See docs/OPEN_ITEMS.md #30.
+ENV IB_GATEWAY_RELEASE_CHANNEL=stable
 # IB Gateway user constants
 ARG USER_ID="${USER_ID:-1000}"
 ARG USER_GID="${USER_GID:-1000}"
