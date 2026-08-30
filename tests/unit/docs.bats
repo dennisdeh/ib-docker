@@ -66,3 +66,36 @@ need_claude_md() {
 		return 1
 	}
 }
+
+@test "docs: no item number is used twice in OPEN_ITEMS or DECISIONS" {
+	# Both files number their items, and both are appended to by more than one
+	# session at a time. That collided twice on 2026-08-30: two `| 35 |` rows in
+	# DECISIONS.md when a rebase brought a branch's row alongside master's, and
+	# again an hour later when four cross-references were written as #36 against
+	# numbers already taken. Neither is something git can see - both sides merge
+	# cleanly and the table simply has two rows with the same identifier, which
+	# the files describe as an identifier other documents cite.
+	#
+	# An item is defined either as a table row `| N |` or as a heading `### N.`,
+	# and the two forms are disjoint in both files - measured, not assumed. A
+	# `| #N |` row is a *reference* to an item defined elsewhere, not a second
+	# definition, so the leading hash keeps it out of this count.
+	local f n dupes bad=''
+	for f in "${ROOT}/docs/OPEN_ITEMS.md" "${ROOT}/docs/DECISIONS.md"; do
+		dupes="$(
+			{
+				sed -n 's/^|[[:space:]]*\([0-9][0-9]*\)[[:space:]]*|.*/\1/p' "$f"
+				sed -n 's/^###[[:space:]]\{1,\}\([0-9][0-9]*\)\..*/\1/p' "$f"
+			} | sort -n | uniq -d
+		)"
+		for n in $dupes; do
+			bad="${bad}
+  ${f#"${ROOT}/"}: #${n} is defined more than once"
+		done
+	done
+	[ -z "$bad" ] || {
+		echo "an item number identifies an item, and other documents cite it:${bad}"
+		echo "renumber the newer one and update anything pointing at it."
+		return 1
+	}
+}
