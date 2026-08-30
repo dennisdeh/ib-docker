@@ -225,7 +225,7 @@ jobs:
           cat "pending/${CHANNEL}.json"
 
       - name: Upload publish plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pending-${{ matrix.channel }}
           path: pending/${{ matrix.channel }}.json
@@ -241,7 +241,7 @@ jobs:
       targets: ${{ steps.plan.outputs.targets }}
     steps:
       - name: Download publish plans
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: pending-*
           path: pending
