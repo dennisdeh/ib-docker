@@ -172,7 +172,7 @@ jobs:
           export LATEST_IBC=$(grep 'ENV IBC_VERSION' $_latest_dockerfile | head -1 | cut -d '=' -f2)
           export STABLE_IBC=$(grep 'ENV IBC_VERSION' $_stable_dockerfile | head -1 | cut -d '=' -f2)
           # The bastion carries no IB version; its own Dockerfile declares one.
-          # Same expression publish.yml tags the published image with.
+          # Same expression publish-bastion.yml tags the published image with.
           export BASTION_VERSION=$(sed -n 's/^ARG IMAGE_VERSION=//p' bastion/Dockerfile | head -1)
           # show in log
           echo "$LATEST_VERSION,$LATEST_MINOR,$LATEST_IBC,$STABLE_VERSION,$STABLE_MINOR,$STABLE_IBC,$BASTION_VERSION"

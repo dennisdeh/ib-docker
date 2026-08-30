@@ -562,3 +562,55 @@ resolve() {
 	run resolve stable '' '' master workflow_dispatch
 	[ "$output" = "0 stable $want" ]
 }
+
+@test "release: a detected IB Gateway version publishes all three images" {
+	# The property the whole automation exists for, asserted end to end. Each
+	# link has its own test above; this one fails when the *chain* breaks, which
+	# is exactly what was wrong until 2026-08-30 - every link was present and the
+	# bastion still only reached ghcr.io when Interactive Brokers happened to
+	# release. See docs/OPEN_ITEMS.md #31.
+	#
+	# The permission and secret hops are half the point. A called workflow cannot
+	# hold a permission its caller withheld, and secrets do not cross a
+	# `workflow_call` without `secrets: inherit` - so either omission publishes
+	# nothing while every file still looks right.
+	local dr="${WORKFLOWS}/detect-releases.yml"
+	local pub="${WORKFLOWS}/publish.yml"
+	local bas="${WORKFLOWS}/publish-bastion.yml"
+	local bad=''
+
+	# hop 1: the daily poll reaches publish.yml, carrying push rights and secrets
+	grep -qF 'uses: ./.github/workflows/publish.yml' "$dr" ||
+		bad="${bad}
+  detect-releases.yml no longer calls publish.yml"
+	grep -qE '^      packages: write' "$dr" ||
+		bad="${bad}
+  detect-releases.yml's publish job cannot grant packages: write"
+	grep -qE '^    secrets: inherit' "$dr" ||
+		bad="${bad}
+  detect-releases.yml does not pass secrets to publish.yml"
+
+	# hop 2: publish.yml pushes the two channel images and reaches the bastion
+	[ "$(grep -c 'push: true' "$pub")" = "2" ] ||
+		bad="${bad}
+  publish.yml no longer pushes exactly the gateway and tws images"
+	grep -qF 'uses: ./.github/workflows/publish-bastion.yml' "$pub" ||
+		bad="${bad}
+  publish.yml no longer calls publish-bastion.yml, so an IB release skips it"
+	grep -qE '^    secrets: inherit' "$pub" ||
+		bad="${bad}
+  publish.yml does not pass secrets on to publish-bastion.yml"
+
+	# hop 3: the bastion is actually pushed, under its own permission
+	[ "$(grep -c 'push: true' "$bas")" = "1" ] ||
+		bad="${bad}
+  publish-bastion.yml no longer pushes the bastion"
+	grep -qE '^      packages: write' "$bas" ||
+		bad="${bad}
+  publish-bastion.yml does not declare the packages: write it needs"
+
+	[ -z "$bad" ] || {
+		echo "a new IB Gateway version would not reach all three images:${bad}"
+		return 1
+	}
+}

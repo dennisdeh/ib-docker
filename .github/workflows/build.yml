@@ -110,9 +110,9 @@ jobs:
       ###############################################################
       # It carries no channel and no IB version, so both matrix legs build the
       # same thing - cheap, because they share one cache scope, and worth it:
-      # publish.yml pushes this image, so a break here must fail CI rather than
-      # a release. Built once per leg rather than in a job of its own so the
-      # PR check stays a single "Build image" status.
+      # publish-bastion.yml pushes this image, so a break here must fail CI
+      # rather than a release. Built once per leg rather than in a job of its
+      # own so the PR check stays a single "Build image" status.
       - name: Build bastion Docker image
         uses: docker/build-push-action@v7
         with:

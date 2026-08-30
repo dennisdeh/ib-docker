@@ -24,11 +24,16 @@ actually outstanding.
 
 ## Still open, as of 2026-08-30
 
-**Nothing.** Every item in this file is marked FIXED or MITIGATED, or has moved
+| # | item | where | why it is still here |
+|---|---|---|---|
+| 32 | nothing serialises two publishes of the same image | Low | Found 2026-08-30 during a workflow audit; no `concurrency:` is declared anywhere. `publish-bastion.yml` has three ways in and `publish.yml` four, so a push to `master` touching `bastion/**` at 06:00 UTC can overlap the daily `detect-releases.yml` run and push the same bastion tag twice. A registry manifest push is atomic, so the loser wastes a build rather than corrupting a tag, and the two builds are of the same commit — which is why this is Low and not Medium. The fix is a `concurrency:` group per workflow and channel with `cancel-in-progress: false`; `true` would be wrong, since cancelling a half-finished multi-arch push is worse than letting it finish. Not done here because it changes release behaviour and was outside what the audit was asked to do. |
+
+Everything else in this file is marked FIXED or MITIGATED, or has moved
 to `DECISIONS.md` as something examined and settled. The last three to go, all
 on 2026-08-30, were #9 (the sudo grant, which had been waiting on a decision
-rather than a patch), #14 and #24. An empty table here is a claim about today,
-not a promise: the next sweep should expect to fill it.
+rather than a patch), #14 and #24. The table was empty for the first time that
+day, for about an hour, until the workflow audit filled it again — which is
+what an empty table is: a claim about the moment, not a promise.
 
 Fixed on 2026-08-29, each with a test shown red against the unfixed code:
 **#10** (VNC password out of the process list), **#11** (the public RDP default
