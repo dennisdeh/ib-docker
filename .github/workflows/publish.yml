@@ -64,6 +64,21 @@ on:
     tags:
       - 'v*'
 
+# Two runs pushing the same tags at once is the failure this prevents: a push
+# of `v10.50.1e-latest` while the daily detect-releases run is publishing the
+# same channel. Keyed on the channel, so the two legs of that run's matrix -
+# latest and stable - still go in parallel, which is what `fail-fast: false`
+# there is for. `inputs.channel` is empty on a tag push, where the ref name
+# carries it instead.
+#
+# cancel-in-progress is false deliberately. Cancelling a half-finished
+# multi-architecture push leaves the registry holding some manifests and not
+# others; waiting costs minutes and leaves it consistent. See
+# docs/OPEN_ITEMS.md #32.
+concurrency:
+  group: publish-${{ inputs.channel || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   # Must stay identical to build.yml's list, or CI passes and this then fails.
   # See docs/OPEN_ITEMS.md #18.

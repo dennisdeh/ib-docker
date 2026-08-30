@@ -33,6 +33,15 @@ on:
       - 'bastion/**'
       - '.github/workflows/publish-bastion.yml'
 
+# One image with one pair of tags, so one group for the whole workflow - no
+# channel to key on. This is the queue that matters most: publish.yml calls this
+# workflow once per channel, so a two-channel release reaches it twice, and a
+# push to master touching bastion/** can arrive while either is running.
+# cancel-in-progress false, for the reason given in publish.yml.
+concurrency:
+  group: publish-bastion
+  cancel-in-progress: false
+
 env:
   # Must stay identical to build.yml's and publish.yml's list, or CI passes and
   # the release then fails on the platform only one of them builds.

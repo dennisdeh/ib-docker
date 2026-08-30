@@ -386,7 +386,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 119 tests as of 2026-08-30, a count
+  container, no network, no credentials. 120 tests as of 2026-08-30, a count
   `tests/unit/docs.bats` holds to the suite.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it

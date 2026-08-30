@@ -614,3 +614,35 @@ resolve() {
 		return 1
 	}
 }
+
+@test "publish: two runs pushing the same tags queue rather than race" {
+	# docs/OPEN_ITEMS.md #32. Both publishing workflows push to fixed tags, and
+	# between them they have seven ways in, so overlap is a matter of timing
+	# rather than of anyone doing something wrong.
+	local f
+	for f in publish.yml publish-bastion.yml; do
+		run grep -qE '^concurrency:' "${WORKFLOWS}/${f}"
+		[ "$status" -eq 0 ] || {
+			echo "${f} declares no concurrency group; two runs can push the same tag at once"
+			return 1
+		}
+		# The dangerous half. Cancelling a half-finished multi-architecture push
+		# leaves the registry holding some manifests and not others; queueing
+		# costs minutes and leaves it consistent.
+		run grep -qE '^  cancel-in-progress: false' "${WORKFLOWS}/${f}"
+		[ "$status" -eq 0 ] || {
+			echo "${f} must set cancel-in-progress: false - a cancelled push is worse than a slow one"
+			return 1
+		}
+	done
+
+	# Keyed on the channel, or detect-releases.yml's two-channel matrix - which
+	# sets fail-fast: false precisely so the legs are independent - would queue
+	# behind itself and take twice as long for no reason.
+	run grep -qE '^  group: publish-\$\{\{ inputs\.channel' "${WORKFLOWS}/publish.yml"
+	[ "$status" -eq 0 ] || {
+		echo "publish.yml's concurrency group must include the channel, or the"
+		echo "stable and latest legs of a release serialise against each other"
+		return 1
+	}
+}
