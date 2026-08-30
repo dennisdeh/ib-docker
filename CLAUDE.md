@@ -370,9 +370,12 @@ Expect roughly 25 minutes under emulation, most of it the IB installer.
 
 **`inv_gateway` and `inv_bastion` belong to the Investio checkout** (see
 *Project overview*), are running, and other `inv_*` services on this machine
-depend on them — anything talking to `127.0.0.1:9898`. Ask `docker ps` rather
-than trusting a list here: this file named `inv_visualisation` until 2026-08-30,
-by which time no container of that name existed.
+depend on them — anything talking to `127.0.0.1:9898`. **Ask `docker ps`; this
+file names none of them on purpose.** It listed one until 2026-08-30, by which
+time that container did not exist; the correction said so, and within hours the
+container was back. A list of somebody else's containers cannot be maintained
+from here at any useful frequency, so the only durable instruction is to go and
+look.
 
 - **Never run `docker compose up/down/restart` in this repository.** The shared
   `name: inv_ibkr` means those commands reach the live containers even though

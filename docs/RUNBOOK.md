@@ -41,10 +41,11 @@ June; this file still said so on 2026-08-30, when `docker ps` was asked and gave
 one there — `pull_policy: always` is what stops it, after a stale local
 `ib-gateway:latest` with no JRE in it ran for weeks.
 
-Other `inv_*` services on this machine consume the gateway's API port. `docker
-ps` is the current list and this file will not keep up with it: the two names
-recorded here until 2026-08-30 (`inv_visualisation`, `inv_ntfy`) matched no
-container, running or stopped, by then.
+Other `inv_*` services on this machine consume the gateway's API port. **`docker
+ps` is the list; this file deliberately keeps none.** It named two until
+2026-08-30, when neither matched a container — and by that evening both were
+running again, which is the argument in one day: their lifecycle is owned
+elsewhere and moves faster than anything written down here.
 
 > This repository's `docker-compose.yml` declares `name: inv_ibkr`, the same
 > project name the Investio copy uses, and Compose identifies a project by that
