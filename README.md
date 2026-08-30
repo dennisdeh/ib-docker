@@ -191,12 +191,25 @@ only the `_FILE` half is ever emitted.
 
 ### Upgrading
 
-Pull the new tag and recreate. One thing needs care: the bastion validates a
-checksum over its provisioned `/etc`, and since 2026-08-27 that covers
-`sshd_config.d/` as well. A `data/` provisioned before then makes the
-container refuse to start rather than skip the check — re-run
+Pull the new tag and recreate. Two things need care.
+
+**The bastion validates a checksum over its provisioned `/etc`**, and since
+2026-08-27 that covers `sshd_config.d/` as well. A `data/` provisioned before
+then makes the container refuse to start rather than skip the check — re-run
 `provision.sh init` against it, which keeps the host keys, so no client's
 `known_hosts` changes.
+
+**Images published from 2026-08-30 drop `sudo` from the gateway image**, and
+with it the passwordless root the `ibgateway` user used to have. Nothing in the
+image ever used that grant; it was there so a start-up script could install
+packages. **If one of your `START_SCRIPTS`, `X_SCRIPTS` or `IBC_SCRIPTS` calls
+`sudo`, it stops working on the new image — and quietly**, because a start-up
+script that fails is reported as `File … not found` and start-up carries on.
+Check for `sudo` in those scripts before you recreate. To add packages, build an
+image on top of this one, as [Start-up scripts](#start-up-scripts) shows; that
+is also the only way they survive the container being recreated. The change
+affects `ib-gateway` only — the TWS image keeps the `sudo` its own start-up
+needs to drop from root to the desktop user.
 
 ## How to use it?
 
