@@ -29,7 +29,6 @@ the same commit; the table below is what is genuinely outstanding.
 
 | # | what | why it is still open |
 |---|---|---|
-| #43 | The TWS image's `abc` account is root-equivalent | The grant is in the linuxserver base (`%sudo ALL=(ALL:ALL) NOPASSWD: ALL` plus membership of gid 27), so removing it needs a `RUN` line in `Dockerfile.tws.template` that survives s6's `init-adduser`, and that needs a runtime test against a 5 GB image. `no-new-privileges` on the tws service would neuter it, but s6 drops root to `abc` and the interaction was not measured, so it was not added blind. |
 | #44 | The live bastion's two `authorized_keys` carry no restrictions | Operational, not a code change: the files live in the deployment's `data/home`, and `deploy/provision.sh` already writes them correctly for anything provisioned since 2026-08-27. The running pair predates it (June) and needs an operator to edit and restart from the owning checkout. |
 | #45 | The **running containers** lag the published images | Not the images: #39 shipped those the moment this commit merged, with no dispatch. `inv_gateway` and `inv_bastion` were recreated at 13:27 on 2026-08-30 onto `5fabe41` and so predate `001bc89` by one commit. Closing it is `docker compose pull && up -d` **from the owning checkout**, which is not this one. |
 
@@ -868,7 +867,7 @@ internet-facing bastion, and both services cap their log growth.
 The tws service is **not** covered — see #43.
 Pinned by `tests/unit/compose.bats`, shown red first.
 
-### 43. The TWS image's `abc` account is root-equivalent — **OPEN**
+### 43. The TWS image's `abc` account is root-equivalent — **FIXED 2026-08-30**
 
 `abc` is in gid 27 and the linuxserver base ships `%sudo ALL=(ALL:ALL) NOPASSWD: ALL`,
 so `su -s /bin/bash abc -c 'sudo -n id'` returns uid 0 — proven by execution.
@@ -878,9 +877,40 @@ or `tests/` states. `tests/unit/dockerfile.bats`' "no image grants its
 unprivileged user passwordless root" cannot catch it: it greps source
 Dockerfiles, and the grant is in a base layer. Mutation-tested — adding a
 NOPASSWD line to `Dockerfile.tws.template` turns it red, so the test works and
-is simply blind to inheritance. Left open deliberately: the fix needs a runtime
-test against a 5 GB image whose s6 init drops root to `abc`, and guessing at it
-is how you ship a container that will not start.
+is simply blind to inheritance.
+
+**Fixed by removing the membership, not the rule.** `Dockerfile.tws.template`
+now runs `gpasswd -d abc sudo` and then asserts the outcome, so a future base
+that stops adding `abc` to the group is tolerated and one that still does cannot
+pass silently. The sudoers rule is left alone, which is what keeps
+`tws-scripts/start_session.sh`'s `sudo -EH -u abc run_tws.sh` working: sudo does
+not authenticate root, so root can still drop privileges. Measured on a built
+image — `sudo -EH -u abc id -un` returns `abc`.
+
+*The unknown that kept this open was answered by reading the base rather than
+guessing.* s6's `init-adduser` does `usermod -d`, `groupmod -o -g "${PGID}"` and
+`usermod -o -u "${PUID}"` and chowns three paths; it touches no secondary group,
+and nothing else under `/etc/s6-overlay`, `/etc/cont-init.d` or
+`/custom-services.d` mentions `gpasswd`, `usermod -aG` or the sudo group. Then
+verified rather than trusted: running that script in the built image renumbers
+`abc` to uid/gid 1000 and leaves `groups=1000(abc),100(users)`.
+
+**The passwordless half was not the whole hole.** `abc`'s password is the known
+string `abc` unless `PASSWD` is set, so an authenticated escalation reaches the
+same place. On the published image both routes returned uid 0; on the fixed one
+`sudo -n` gives *"a password is required"* and `echo abc | sudo -S id` gives
+*"abc is not in the sudoers file"*.
+
+`tests/container/tws_privileges.bats` pins all five properties, and
+`tests/run.sh` now forwards `TWS_IMAGE` the way it already forwarded
+`BASTION_IMAGE`. Shown red against `ghcr.io/dennisdeh/tws-rdesktop:latest` —
+four of the five fail there — and green against the rebuilt image, with "root
+can still drop privileges to abc" passing on both, so the suite is measuring
+this change rather than the image.
+
+`no-new-privileges` on the tws service is still not added: the image's own
+start-up uses setuid `sudo` to drop root to `abc`, and that interaction remains
+unmeasured. Removing the group membership does not need it.
 
 ### 44. The live bastion's `authorized_keys` carry no restrictions — **OPEN (operational)**
 

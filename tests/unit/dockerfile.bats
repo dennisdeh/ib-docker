@@ -256,10 +256,15 @@ ibc_pins() {
 	# rejected rather than chosen.
 	#
 	# Sources only: the parity tests above hold the channel copies to them.
+	# Comments are stripped first. A Dockerfile that *removes* a grant has to
+	# say why it is doing so, and naming the thing it removes must not fail a
+	# test that forbids adding one - which is exactly what happened when
+	# Dockerfile.tws.template grew the comment above its `gpasswd -d abc sudo`.
+	# This judges instructions; prose is not an instruction.
 	local f bad=''
 	for f in "${ROOT}/Dockerfile.template" "${ROOT}/Dockerfile.tws.template" \
 		"${ROOT}/bastion/Dockerfile" "${ROOT}/tests/Dockerfile"; do
-		if grep -qE 'NOPASSWD|/etc/sudoers' "$f"; then
+		if sed 's/#.*//' "$f" | grep -qE 'NOPASSWD|/etc/sudoers'; then
 			bad="${bad} ${f#"${ROOT}/"}"
 		fi
 	done

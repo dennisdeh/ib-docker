@@ -211,9 +211,13 @@ packages. **If one of your `START_SCRIPTS`, `X_SCRIPTS` or `IBC_SCRIPTS` calls
 script that fails is reported as `File … not found` and start-up carries on.
 Check for `sudo` in those scripts before you recreate. To add packages, build an
 image on top of this one, as [Start-up scripts](#start-up-scripts) shows; that
-is also the only way they survive the container being recreated. The change
-affects `ib-gateway` only — the TWS image keeps the `sudo` its own start-up
-needs to drop from root to the desktop user.
+is also the only way they survive the container being recreated.
+
+**The TWS image is affected too, differently.** It still ships `sudo`, because
+its own start-up uses it to drop from root to the desktop user `abc`. What
+changed is that `abc` is no longer in the `sudo` group, so it can no longer
+become root — with or without its password. Nothing in the image relied on
+that; a start-up script of yours might have.
 
 ## How to use it?
 

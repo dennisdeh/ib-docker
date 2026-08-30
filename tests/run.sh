@@ -34,6 +34,7 @@ run_container() {
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-e IB_GATEWAY_IMAGE \
 		-e BASTION_IMAGE \
+		-e TWS_IMAGE \
 		"$RUNNER_IMAGE" tests/container
 }
 

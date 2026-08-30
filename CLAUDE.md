@@ -410,8 +410,11 @@ tests/run.sh all
   `sshd_config.d` and asserts the bastion refuses to start; set `BASTION_IMAGE`
   to test an image other than `ghcr.io/dennisdeh/bastion:latest` — `tests/run.sh`
   forwards that variable, which it did not until 2026-08-29, so setting it used
-  to do nothing and the suite silently tested the published image. 13 tests as
-  of 2026-08-29, and **not run in CI** — see `DECISIONS.md` #11.
+  to do nothing and the suite silently tested the published image.
+  `tws_privileges.bats` does the same for the TWS image with `TWS_IMAGE`, and is
+  the only place a grant *inherited from a base layer* can be caught — the unit
+  suite greps source Dockerfiles and cannot see one. 22 tests as of 2026-08-30,
+  and **not run in CI** — see `DECISIONS.md` #11.
 - Nothing in the suite touches `inv_gateway`/`inv_bastion`.
 
 ### 5. Links in the documentation

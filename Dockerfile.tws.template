@@ -69,6 +69,27 @@ COPY ./tws-scripts/start_session.sh /custom-services.d/start_session.sh
 COPY ./tws-scripts/run_tws.sh ${SCRIPT_PATH}
 COPY ./scripts/* ${SCRIPT_PATH}
 
+# The desktop user must not be root-equivalent.
+#
+# The linuxserver base ships `%sudo ALL=(ALL:ALL) NOPASSWD: ALL` in /etc/sudoers
+# and puts `abc` in gid 27, so `su -s /bin/bash abc -c 'sudo -n id'` returned
+# uid 0 - the account the whole desktop and TWS run as could become root with no
+# password. tests/unit/dockerfile.bats cannot see this: it greps source
+# Dockerfiles and the grant is two layers down. See docs/OPEN_ITEMS.md #43.
+#
+# Removing the membership rather than the sudoers rule keeps root's own
+# `sudo -EH -u abc` working - that is how tws-scripts/start_session.sh drops
+# privileges, and sudo does not authenticate root. Verified against the base
+# that nothing restores the membership at runtime: s6's init-adduser only
+# does `usermod -u` / `groupmod -g` / `usermod -d` and chowns three paths, and
+# nothing else under /etc/s6-overlay, /etc/cont-init.d or /custom-services.d
+# mentions gpasswd, `usermod -aG` or the sudo group.
+#
+# The `if` tolerates a future base that no longer adds abc to the group; the
+# assertion after it does not tolerate one that still does.
+RUN case " $(id -nG abc) " in *" sudo "*) gpasswd -d abc sudo ;; esac && \
+  case " $(id -nG abc) " in *" sudo "*) exit 1 ;; esac
+
 # Fail the build if no JVM survived the copies above - see Dockerfile.
 RUN java_bin="$(find /usr/local/i4j_jres ${TWS_PATH} -name java -type f -print -quit 2>/dev/null || true)" && \
   [ -n "${java_bin}" ] && "${java_bin}" -version
