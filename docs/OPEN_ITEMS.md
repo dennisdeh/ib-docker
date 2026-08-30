@@ -24,8 +24,11 @@ actually outstanding.
 
 ## Still open, as of 2026-08-30
 
-| # | item | where | why it is still here |
-|---|---|---|---|
+**Nothing.** Every item in this file is marked FIXED or MITIGATED, or has moved
+to `DECISIONS.md` as something examined and settled. The last three to go, all
+on 2026-08-30, were #9 (the sudo grant, which had been waiting on a decision
+rather than a patch), #14 and #24. An empty table here is a claim about today,
+not a promise: the next sweep should expect to fill it.
 
 Fixed on 2026-08-29, each with a test shown red against the unfixed code:
 **#10** (VNC password out of the process list), **#11** (the public RDP default

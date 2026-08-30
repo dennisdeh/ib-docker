@@ -85,8 +85,8 @@ check_provision() {
 		echo "> checksum FAILED. 🔒 exiting ..."
 		echo "> You might want to provision your data/ dir
     docker run -it --rm --env-file .env \
-      -v $PWD/data:/data \
-      dennisdeh/bastion /provision.sh
+      -v \$PWD/data:/data \
+      ghcr.io/dennisdeh/bastion:latest /provision.sh
     "
 		exit 1
 	fi

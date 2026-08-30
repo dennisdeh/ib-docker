@@ -10,7 +10,7 @@ ARG APT_PROXY
 # touching this directory publishes whatever it says. It was previously used by the LABEL below
 # without ever being declared, which made every image report version
 # "-resolute".
-ARG IMAGE_VERSION=2604.02
+ARG IMAGE_VERSION=2604.03
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # apt is retried because ports.ubuntu.com - the aarch64 mirror, and only it -
 # intermittently serves an index referencing a .deb its pool 404s on, which

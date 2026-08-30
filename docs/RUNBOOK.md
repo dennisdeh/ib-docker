@@ -5,7 +5,8 @@ documented in `template_README.md`, the ssh bastion in `bastion/README.md`, and
 how to change the image in `CONTRIBUTING.md`; this file is about *this*
 deployment.
 
-*Last updated: 2026-08-28*
+*Last updated: 2026-08-30 — the vendored path, the bastion's image and the
+port table re-read from the running containers and from `.env`.*
 
 ## What runs, and from where
 
@@ -13,24 +14,28 @@ deployment.
 vendored copy of this project inside the Investio repository:
 
 ```text
-/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker/docker-compose.yml
+/mnt/data/Documents/Investio/modules/p00_apps/ib-docker/docker-compose.yml
 ```
 
 *(Read from the containers' `com.docker.compose.project.config_files` label,
-2026-08-25.)* Investio is expected to consume this repository later.
+2026-08-25; re-read 2026-08-30, when it turned out that copy had been renamed
+from `ib-gateway-docker` to `ib-docker` and the path recorded here no longer
+existed.)* Investio is expected to consume this repository later.
 
 | container | image | role |
 |---|---|---|
 | `inv_gateway` | `ghcr.io/dennisdeh/ib-gateway:latest` | IB Gateway + IBC under Xvfb |
-| `inv_bastion` | `dennisdeh/bastion:local-resolute` | SSH jump host for the tunnel |
+| `inv_bastion` | `ghcr.io/dennisdeh/bastion:latest` | SSH jump host for the tunnel |
 
-The bastion image name above is what the vendored copy *builds*; since
-2026-08-27 this repository also publishes `ghcr.io/dennisdeh/bastion`, and
-`docker-compose.yml` here names that instead. The running container keeps the
-locally built tag until the Investio copy is synced.
+Both containers run the **published** images. The bastion ran a locally built
+`dennisdeh/bastion:local-resolute` until the vendored copy was synced; this file
+still said so on 2026-08-30, when `docker ps` was asked and gave
+`ghcr.io/dennisdeh/bastion:latest`.
 
-Other services on this machine (`inv_visualisation`, `inv_db`, `inv_redis`,
-`inv_ntfy`) consume the gateway's API port.
+Other `inv_*` services on this machine consume the gateway's API port. `docker
+ps` is the current list and this file will not keep up with it: the two names
+recorded here until 2026-08-30 (`inv_visualisation`, `inv_ntfy`) matched no
+container, running or stopped, by then.
 
 > This repository's `docker-compose.yml` declares `name: inv_ibkr`, the same
 > project name the Investio copy uses, and Compose identifies a project by that
@@ -40,14 +45,15 @@ Other services on this machine (`inv_visualisation`, `inv_db`, `inv_redis`,
 
 ## Ports
 
-*Last updated: 2026-08-25 — read from `.env`; re-check before relying on it.*
+*Last updated: 2026-08-30 — read from `.env`; re-check before relying on it.
+The bastion row said `2222` until then, against a `SSH_LISTEN_PORT` of 22222.*
 
 | host | container | what |
 |---|---|---|
 | `127.0.0.1:9898` | `4004` (socat) → `4002` (API) | paper API |
 | `127.0.0.1:9899` | `4003` (socat) → `4001` (API) | live API |
 | `127.0.0.1:9897` | `5900` | VNC |
-| `2222` | `22` | bastion SSH |
+| `22222` | `22` | bastion SSH |
 
 The published port is always the **socat** port, never the API port IB Gateway
 itself listens on. See *Key conventions* in `CLAUDE.md`.
@@ -55,7 +61,8 @@ itself listens on. See *Key conventions* in `CLAUDE.md`.
 The host-side numbers come from `.env`, not from `docker-compose.yml`:
 `PORT_HOST_TWS_LIVE`, `PORT_HOST_TWS_PAPER`, `PORT_HOST_VNC_SERVER` and
 `SSH_LISTEN_PORT`. `.env-dist` records the defaults (`4001`/`4002`/`5900`/
-`22222`), which is why the table above does not match a fresh checkout.
+`22222`), which is why the first three rows above do not match a fresh
+checkout; `SSH_LISTEN_PORT` happens to be the default here.
 
 ## Start / stop
 
@@ -63,7 +70,7 @@ Run these **from whichever checkout owns the deployment** — today the Investio
 copy above, not this one:
 
 ```bash
-cd <the owning checkout>   # $PWD-based mounts require this
+cd <the owning checkout>   # compose resolves ./ mounts against the project dir
 docker compose config      # validate .env + wiring, starts nothing
 docker compose up -d       # start
 docker compose down        # stop — interrupts every dependent service

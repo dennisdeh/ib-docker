@@ -25,7 +25,9 @@ free to propose changes to this document in a pull request.
 
 This repository builds three images — `ghcr.io/dennisdeh/ib-gateway`,
 `ghcr.io/dennisdeh/tws-rdesktop` and `ghcr.io/dennisdeh/bastion` — and one
-`docker-compose.yml` runs all three.
+`docker-compose.yml` defines all three. `ib-gateway` and `tws` sit behind
+Compose profiles that `IB_APP` selects between; the bastion has no profile and
+always starts.
 
 | path | what it is |
 | --- | --- |
@@ -93,8 +95,15 @@ python3 -m venv .venv
     # Name the service: docker-compose.yml holds both ib-gateway and tws
     # behind Compose profiles, and a bare `build` only builds the one IB_APP
     # selects.
-    docker compose build --pull ib-gateway   # or: tws, or: bastion
+    docker compose build --pull ib-gateway   # or: bastion
+    docker compose build tws                 # no --pull here - see below
     ```
+
+    `tws` builds `FROM` the gateway image, and `--pull` means "fetch the base
+    from the registry every time". Since the packages went public that
+    succeeds — and quietly builds against whatever the last release published
+    instead of the gateway you just built. Build `ib-gateway` first, then `tws`
+    without `--pull`. See `docs/DECISIONS.md` #30.
 
     A build on an x86 machine only proves `linux/amd64`. CI builds both, and
     the two take genuinely different paths — IB ships a separate installer per
@@ -177,7 +186,10 @@ tagged with the version, the `major.minor` series and the channel name, and
 bump PR is still reviewed and merged by a human; the images do not wait for it.
 
 The bastion has no IB version of its own, so bumping it means editing that one
-`ARG` — it is what both `publish.yml` and `deploy/provision.sh` read.
+`ARG` — it is what both `.github/workflows/publish-bastion.yml` and
+`deploy/provision.sh` read. That workflow also has its own trigger: a push to
+`master` touching `bastion/**` publishes the image, so a bastion fix does not
+wait for an IB Gateway release.
 
 The same applies to `image-files/`: your change reaches the published images at
 the next IB Gateway release, when `update.sh` regenerates the channels. To

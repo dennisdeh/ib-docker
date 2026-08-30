@@ -21,10 +21,17 @@ one `docker-compose.yml` now runs the gateway, TWS and the bastion behind
 profiles, so a name that mentioned only the gateway had stopped being true.
 **The rename was of the repository, not of the packages** — the three image
 names above are unchanged, and `Dockerfile.tws` still opens `FROM
-ghcr.io/dennisdeh/ib-gateway`. Two strings deliberately keep the old spelling
+ghcr.io/dennisdeh/ib-gateway`. One string deliberately keeps the old spelling
 and must survive any future sweep: `gnzsnz/ib-gateway-docker`, the project this
-was forked from, and the Investio vendored path below, which is a directory in
-somebody else's tree. `tests/unit/naming.bats` fails on any other occurrence.
+was forked from, which is not ours to rename. *(It was two until 2026-08-30;
+the Investio vendored copy has since been renamed too — see below.)*
+`tests/unit/naming.bats` fails on any further occurrence of the
+**owner-qualified** form — this owner's name, a slash, the old repository name
+— which is what a URL, a remote or a `uses:` is built from and the one that
+breaks a build. It does not match the bare name, which still appears in prose
+describing the rename; matching that would only train people to ignore the
+check. (Spelling the qualified form out here would fail that very test, which
+is how this sentence was first written and caught.)
 
 **This project is independent, not a tracking fork.** It began as a fork of
 `gnzsnz/ib-gateway-docker`, which `LICENSE` and the README credit, and that is
@@ -37,12 +44,14 @@ installer servers, `IbcAlpha/IBC`, `lscr.io/linuxserver/rdesktop` and Azul.
 **This checkout is the source of the images, not the running deployment.**
 `inv_gateway` and `inv_bastion` are started from a vendored copy of this project
 inside the Investio repository, at
-`/mnt/data/Documents/Investio/modules/p00_apps/ib-gateway-docker` — still the
-old name, because renaming this repository does not rename a directory in
-Investio's tree. Investio is expected to consume this repository later; until it
-does, a change merged here reaches the running stack only when someone updates
-that copy. *(Stated by the owner and confirmed from the containers' compose
-labels, 2026-08-25; path re-confirmed unchanged 2026-08-27.)*
+`/mnt/data/Documents/Investio/modules/p00_apps/ib-docker`. Investio is expected
+to consume this repository later; until it does, a change merged here reaches
+the running stack only when someone updates that copy. *(Stated by the owner and
+confirmed from the containers' compose labels, 2026-08-25. **That copy has since
+been renamed** — this file said `ib-gateway-docker` and described it as
+deliberately keeping the old name until 2026-08-30, when the running containers'
+`com.docker.compose.project.config_files` label was re-read and gave
+`.../p00_apps/ib-docker/docker-compose.yml`; the old path no longer exists.)*
 
 > **Compose commands run here still hit those live containers.** This
 > repository's `docker-compose.yml` and the Investio copy both declare
@@ -65,9 +74,14 @@ labels, 2026-08-25; path re-confirmed unchanged 2026-08-27.)*
 No language runtime, no virtualenv. What you need is Docker and the repo root:
 
 ```bash
-cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-docker"
+cd "/mnt/data/Documents/Coding/00_My GitHub Repositories/ib-gateway-docker"
 docker compose config   # validates .env + compose wiring without starting anything
 ```
+
+**The checkout directory is still named `ib-gateway-docker`**, though the
+repository is `ib-docker`; renaming a clone is not part of renaming a
+repository. This file said `ib-docker` here until 2026-08-30, so the first
+command in it did not work. *(Checked against the filesystem that day.)*
 
 - All scripts and compose files resolve paths relative to **the repo root**.
   The volume mounts are relative (`./ssh`), which compose resolves against the
@@ -162,9 +176,11 @@ makes the container refuse to start — that is the feature, not a bug.
   templates only and deliberately does *not* run `update.sh`; the next gateway
   release propagates it. So a gap between `Dockerfile.template` and
   `latest/`/`stable/` is expected, not a defect — do not "fix" it by running
-  `update.sh` unless a version bump is what you were actually asked for. Both
-  channels were last regenerated on 2026-08-25 and all three then read `3.24.1`
-  (gateway `10.48.1e` latest, `10.45.1j` stable).
+  `update.sh` unless a version bump is what you were actually asked for. As of
+  2026-08-30 the templates and `latest/` read IBC `3.24.2` while `stable/` reads
+  `3.24.1`, which is exactly that expected gap; the gateway versions are
+  `10.50.1e` (latest) and `10.45.1j` (stable). `tests/unit/docs.bats` fails when
+  a gateway version named here is not one the tree builds.
 - **One compose file, two applications.** `docker-compose.yml` holds an
   `ib-gateway` service and a `tws` service behind Compose profiles of the same
   name; `IB_APP` in `.env` feeds `COMPOSE_PROFILES` and decides which one is
@@ -206,8 +222,9 @@ makes the container refuse to start — that is the feature, not a bug.
   out if both `VAR` and `VAR_FILE` are set**. `unset_env` then clears the value
   before IBC starts, so a password read from a file is not in the environment of
   child processes. Preserve that pairing when touching credential handling.
-- **`CUSTOM_CONFIG=yes` disables all templating** — `apply_settings()` returns
-  early and neither `config.ini` nor `jts.ini` is regenerated from env vars. A
+- **`CUSTOM_CONFIG=yes` disables all templating** — `apply_settings()` in
+  `common.sh` wraps its whole body in `if [ "$CUSTOM_CONFIG" != "yes" ]`, so
+  neither `config.ini` nor `jts.ini` is regenerated from env vars. A
   bug report of "my env var is ignored" is usually this.
 - **`jts.ini` is written only if absent.** An existing settings file is never
   rewritten, so `TIME_ZONE` changes do not take effect on a container with a
@@ -332,8 +349,10 @@ Expect roughly 25 minutes under emulation, most of it the IB installer.
 ### 3. Runtime — the live containers are not ours to touch
 
 **`inv_gateway` and `inv_bastion` belong to the Investio checkout** (see
-*Project overview*), are running, and other services depend on them
-(`inv_visualisation`, and anything talking to `127.0.0.1:9898`).
+*Project overview*), are running, and other `inv_*` services on this machine
+depend on them — anything talking to `127.0.0.1:9898`. Ask `docker ps` rather
+than trusting a list here: this file named `inv_visualisation` until 2026-08-30,
+by which time no container of that name existed.
 
 - **Never run `docker compose up/down/restart` in this repository.** The shared
   `name: inv_ibkr` means those commands reach the live containers even though
@@ -367,7 +386,8 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 106 tests as of 2026-08-29.
+  container, no network, no credentials. 117 tests as of 2026-08-30, a count
+  `tests/unit/docs.bats` holds to the suite.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it
   under `bash -e`, which is the shell a step with no `defaults.run.shell` gets,

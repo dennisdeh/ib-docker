@@ -171,7 +171,7 @@ The following variables are available in the .env file
 | SSHD_USER_CA | '/etc/ssh/user_ca.pub' | public CA key. You will need to copy it into ./data/etc/ssh directory |
 | CONTAINER_NAME_BASTION | bastion | Name given to the container. |
 | DNS | blank | Optional DNS server for the container, so clients can use names rather than IP addresses. Commented out in `docker-compose.yml` by default. |
-| IMAGE_VERSION | 2604.02 | The image's own version, independent of any IB Gateway release. `ARG IMAGE_VERSION` in the `Dockerfile` is the declaration; `.github/workflows/publish-bastion.yml` reads it to tag the published image and `deploy/provision.sh` reads it to pick which tag to pull, so **that one line is the place to bump it**. A push to `master` under `bastion/` publishes, and an unbumped version overwrites the tag it already has — which is right for a rebuild that only changes how the image is built, and wrong for one that changes how it behaves. Bump it for the second. |
+| IMAGE_VERSION | 2604.03 | The image's own version, independent of any IB Gateway release. `ARG IMAGE_VERSION` in the `Dockerfile` is the declaration; `.github/workflows/publish-bastion.yml` reads it to tag the published image and `deploy/provision.sh` reads it to pick which tag to pull, so **that one line is the place to bump it**. A push to `master` under `bastion/` publishes, and an unbumped version overwrites the tag it already has — which is right for a rebuild that only changes how the image is built, and wrong for one that changes how it behaves. Bump it for the second. |
 | BASE_VERSION | resolute | Ubuntu base image. Used during build. |
 
 After you have set your .env file check that the configuration is correct.

@@ -84,7 +84,7 @@ tunnel dials — for `linux/amd64` and `linux/arm64`, with the following tags:
 | [ib-gateway][1] |`stable` | `10.45.1j` | `3.24.1` | `stable` `10.45` `10.45.1j` |
 | [tws-rdesktop][2] | `latest` | `10.50.1e` | `3.24.2` | `latest` `10.50` `10.50.1e` |
 | [tws-rdesktop][2] |`stable` | `10.45.1j` | `3.24.1` | `stable` `10.45` `10.45.1j` |
-| [bastion][3] | — | — | — | `latest` `2604.02` |
+| [bastion][3] | — | — | — | `latest` `2604.03` |
 
 All tags are available in the container repository for [ib-gateway][1] and
 [tws-rdesktop][2]. IB Gateway and TWS share the same version numbers and tags.
