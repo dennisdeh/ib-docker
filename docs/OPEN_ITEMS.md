@@ -24,14 +24,14 @@ actually outstanding.
 
 ## Still open, as of 2026-08-30 (second sweep)
 
-A container security audit that day added items **#35-#43**. Most are fixed in
+A container security audit that day added items **#35-#45**. Most are fixed in
 the same commit; the table below is what is genuinely outstanding.
 
 | # | what | why it is still open |
 |---|---|---|
 | #43 | The TWS image's `abc` account is root-equivalent | The grant is in the linuxserver base (`%sudo ALL=(ALL:ALL) NOPASSWD: ALL` plus membership of gid 27), so removing it needs a `RUN` line in `Dockerfile.tws.template` that survives s6's `init-adduser`, and that needs a runtime test against a 5 GB image. `no-new-privileges` on the tws service would neuter it, but s6 drops root to `abc` and the interaction was not measured, so it was not added blind. |
 | #44 | The live bastion's two `authorized_keys` carry no restrictions | Operational, not a code change: the files live in the deployment's `data/home`, and `deploy/provision.sh` already writes them correctly for anything provisioned since 2026-08-27. The running pair predates it (June) and needs an operator to edit and restart from the owning checkout. |
-| #45 | The published gateway and TWS images lag the source tree | #39 fixes it for every future change. The images that are out there now still need one `publish.yml` dispatch per channel; nothing in this repository can do that for itself. |
+| #45 | The **running containers** lag the published images | Not the images: #39 shipped those the moment this commit merged, with no dispatch. `inv_gateway` and `inv_bastion` were recreated at 13:27 on 2026-08-30 onto `5fabe41` and so predate `001bc89` by one commit. Closing it is `docker compose pull && up -d` **from the owning checkout**, which is not this one. |
 
 **The previous claim here — "Still open: Nothing" — was true of the source tree
 and false of every artefact an operator could pull**, which is what #39 is
@@ -896,8 +896,23 @@ accept dialog: a key holder gets a trusted, order-capable session.
 were never re-provisioned. Nothing in this repository can fix that — it is an
 edit to the deployment's `data/home` and a restart from the owning checkout.
 
-### 45. The published images still lag the source — **OPEN (operational)**
+### 45. The running containers lag the published images — **OPEN (operational)**
 
-Item #39 stops it recurring. It does not update what is already on ghcr.io: the
-gateway image the deployment runs still grants uid 1000 passwordless root. One
-`publish.yml` dispatch per channel ships it, then a pull in the deployment.
+*Rewritten 2026-08-30 after the fact it described stopped being true, twice
+over. As written it said the published images lagged the source and that "the
+gateway image the deployment runs still grants uid 1000 passwordless root",
+needing "one `publish.yml` dispatch per channel".*
+
+Neither half survived the day. The dispatch happened at 11:53 and 09:59, putting
+both channels on `5fabe41` — the first published gateway without the sudo grant.
+Then #39's own workflow republished all three images at `001bc89` when this
+commit merged, with no dispatch at all, which is the point of it: measured on
+the artefacts the same afternoon, `ib-gateway`, `tws-rdesktop` and `bastion` all
+carry `org.opencontainers.image.revision=001bc89`.
+
+What is left is one hop further down. `inv_gateway` and `inv_bastion` were
+recreated at 13:27 and run `5fabe41`, so they are a commit behind what is
+published — they have the dropped sudo grant, and not this commit's hardening.
+Nothing in this repository can close that: the containers belong to the Investio
+checkout, and `docker compose pull && up -d` there is an operator action. See
+`docs/RUNBOOK.md`.
