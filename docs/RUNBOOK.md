@@ -5,32 +5,41 @@ documented in `template_README.md`, the ssh bastion in `bastion/README.md`, and
 how to change the image in `CONTRIBUTING.md`; this file is about *this*
 deployment.
 
-*Last updated: 2026-08-30 — the vendored path, the bastion's image and the
-port table re-read from the running containers and from `.env`.*
+*Last updated: 2026-08-30 — the path, the bastion's image and the port table
+re-read from the running containers and from `.env`; then rewritten again that
+evening, when the deployment turned out to vendor nothing at all.*
 
 ## What runs, and from where
 
-**Not from this checkout.** `inv_gateway` and `inv_bastion` are started from a
-vendored copy of this project inside the Investio repository:
+**Not from this checkout.** `inv_gateway` and `inv_bastion` are started from:
 
 ```text
 /mnt/data/Documents/Investio/modules/p00_apps/ib-docker/docker-compose.yml
 ```
 
+That directory holds **that one tracked file and nothing else of this project**
+— no `build:` section, `pull_policy: always`, beside the untracked live state
+(`.env`, `bastion/.env`, `ssh/`, `data/`). It vendored the image sources until
+2026-08-30 and no longer does: **do not rsync this repository into it.** A
+change here reaches the stack by being published and the containers recreated.
+See `CLAUDE.md` and `docs/DECISIONS.md` #38.
+
 *(Read from the containers' `com.docker.compose.project.config_files` label,
-2026-08-25; re-read 2026-08-30, when it turned out that copy had been renamed
-from `ib-gateway-docker` to `ib-docker` and the path recorded here no longer
-existed.)* Investio is expected to consume this repository later.
+2026-08-25; re-read 2026-08-30, when the copy turned out to have been renamed
+from `ib-gateway-docker` to `ib-docker`, and again that evening when the
+vendoring turned out to be gone.)*
 
 | container | image | role |
 |---|---|---|
 | `inv_gateway` | `ghcr.io/dennisdeh/ib-gateway:latest` | IB Gateway + IBC under Xvfb |
 | `inv_bastion` | `ghcr.io/dennisdeh/bastion:latest` | SSH jump host for the tunnel |
 
-Both containers run the **published** images. The bastion ran a locally built
-`dennisdeh/bastion:local-resolute` until the vendored copy was synced; this file
-still said so on 2026-08-30, when `docker ps` was asked and gave
-`ghcr.io/dennisdeh/bastion:latest`.
+Both containers run the **published** images, which is now the only thing they
+can run. The bastion ran a locally built `dennisdeh/bastion:local-resolute` into
+June; this file still said so on 2026-08-30, when `docker ps` was asked and gave
+`ghcr.io/dennisdeh/bastion:latest`. A local tag can no longer shadow a published
+one there — `pull_policy: always` is what stops it, after a stale local
+`ib-gateway:latest` with no JRE in it ran for weeks.
 
 Other `inv_*` services on this machine consume the gateway's API port. `docker
 ps` is the current list and this file will not keep up with it: the two names
@@ -77,10 +86,10 @@ docker compose down        # stop — interrupts every dependent service
 ```
 
 `up -d` starts whatever `IB_APP` in that checkout's `.env` selects, plus the
-bastion. The vendored copy still carries the pre-2026-08-25 two-file layout,
-which has no `IB_APP`; when it is synced from this repository, `.env` there
-needs `IB_APP=ib-gateway` and `COMPOSE_PROFILES=${IB_APP}` or `up -d` will
-create the bastion alone.
+bastion. That `.env` has carried `IB_APP=ib-gateway` and
+`COMPOSE_PROFILES=${IB_APP}` since before 2026-08-30 — this file warned they
+were missing until then, on the strength of a layout that had already been
+superseded.
 
 Safe from anywhere, read-only:
 

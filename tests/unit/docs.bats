@@ -16,11 +16,14 @@ setup() {
 	CLAUDE="${ROOT}/CLAUDE.md"
 }
 
-# This suite is vendored into trees that deliberately do not take CLAUDE.md -
-# the Investio deployment mirrors everything that builds or runs the images and
-# leaves that file behind on purpose, because Claude Code auto-loads a nested
-# CLAUDE.md as binding instructions and this one's framing ("not the running
-# deployment", "never run a compose lifecycle command here") is false there.
+# This suite can be copied into a tree that deliberately does not take
+# CLAUDE.md. The Investio deployment did exactly that until 2026-08-30, on the
+# reasoning that Claude Code auto-loads a nested CLAUDE.md as binding
+# instructions and this one's framing ("not the running deployment", "never run
+# a compose lifecycle command here") is false there. It now vendors nothing at
+# all - see docs/DECISIONS.md #38 - but the skip stays: the reasoning applies to
+# any consumer, and a test that needs a file its tree does not have should say
+# so rather than fail or, worse, pass.
 #
 # Skipping is the honest answer, and it has to be explicit: without it the
 # version check below passes on a file that is not there, having found no

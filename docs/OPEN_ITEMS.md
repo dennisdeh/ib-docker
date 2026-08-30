@@ -208,11 +208,12 @@ quoting alone:
 Verified 2026-08-25 with `docker compose config`: the values now appear in the
 service definition.
 
-**The running `inv_bastion` is unaffected, and deliberately so.** It is started
-from the Investio copy of this project (see `CLAUDE.md`), whose
-`docker-compose.yml` still passes only `USERS` — checked 2026-08-25. The fix
-here reaches it when Investio adopts this repository, or if the same change is
-made there. The owner has asked that the container not be recreated.
+**The running `inv_bastion` was unaffected at the time, and deliberately so.**
+It is started from the deployment's own `docker-compose.yml` (see `CLAUDE.md`),
+which passed only `USERS` when this was checked on 2026-08-25. That file is
+maintained there, not copied from here, so a fix in this repository reaches it
+only if the same change is made there — which is what `DECISIONS.md` #38 is
+about.
 
 ### 7. `SSH_REMOTE_PORT` did the opposite of what the documentation said — **FIXED (documentation)**
 

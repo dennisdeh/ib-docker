@@ -24,7 +24,8 @@ names above are unchanged, and `Dockerfile.tws` still opens `FROM
 ghcr.io/dennisdeh/ib-gateway`. One string deliberately keeps the old spelling
 and must survive any future sweep: `gnzsnz/ib-gateway-docker`, the project this
 was forked from, which is not ours to rename. *(It was two until 2026-08-30;
-the Investio vendored copy has since been renamed too — see below.)*
+the copy inside Investio was renamed too, and has since stopped vendoring
+anything — see below.)*
 `tests/unit/naming.bats` fails on any further occurrence of the
 **owner-qualified** form — this owner's name, a slash, the old repository name
 — which is what a URL, a remote or a `uses:` is built from and the one that
@@ -42,16 +43,27 @@ installer servers, `IbcAlpha/IBC`, `lscr.io/linuxserver/rdesktop` and Azul.
 *(Decoupled on the owner's instruction, 2026-08-25.)*
 
 **This checkout is the source of the images, not the running deployment.**
-`inv_gateway` and `inv_bastion` are started from a vendored copy of this project
-inside the Investio repository, at
-`/mnt/data/Documents/Investio/modules/p00_apps/ib-docker`. Investio is expected
-to consume this repository later; until it does, a change merged here reaches
-the running stack only when someone updates that copy. *(Stated by the owner and
-confirmed from the containers' compose labels, 2026-08-25. **That copy has since
-been renamed** — this file said `ib-gateway-docker` and described it as
-deliberately keeping the old name until 2026-08-30, when the running containers'
-`com.docker.compose.project.config_files` label was re-read and gave
-`.../p00_apps/ib-docker/docker-compose.yml`; the old path no longer exists.)*
+`inv_gateway` and `inv_bastion` are started from
+`/mnt/data/Documents/Investio/modules/p00_apps/ib-docker`, which since
+2026-08-30 holds **one tracked file — a `docker-compose.yml` that only pulls**.
+It has no `build:` section at all and `pull_policy: always`, beside the
+untracked live state (`.env`, `bastion/.env`, `ssh/`, `data/`) that cannot be
+fetched again.
+
+**Nothing there is a copy of this repository any more, and it must not be made
+one.** It vendored 81 files until that day; Investio deleted them on the
+reasoning that *a vendored copy of sources you never build is a second version
+of the truth* — it read as authoritative while the gateway ran an image built
+from a different revision than `latest/Dockerfile` there declared. A change
+merged here now reaches the running stack when it is **published** and the
+containers are recreated, not when someone copies files. `deploy/provision.sh`
+is unaffected: it runs as `/provision.sh` *inside* the published image, never
+from a checkout. See `docs/DECISIONS.md` #38.
+
+*(Path confirmed from the containers' `com.docker.compose.project.config_files`
+label, 2026-08-25 and again 2026-08-30. This file described the directory as a
+vendored copy needing periodic re-sync until 2026-08-30, when a re-sync run
+against it restored 86 deleted files and had to be undone.)*
 
 > **Compose commands run here still hit those live containers.** This
 > repository's `docker-compose.yml` and the Investio copy both declare
