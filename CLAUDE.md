@@ -109,7 +109,7 @@ Everything below is untracked or gitignored and must be supplied out-of-band:
 
 | path | what it is | how to get it |
 |---|---|---|
-| `.env` | credentials + ports for **both** the gateway and the bastion service | `cp .env-dist .env`, then fill in; `.env-dist` records the key names |
+| `.env` | credentials + ports for **both** the gateway and the bastion service | `cp .env-dist .env`, **`chmod 600`**, then fill in; `.env-dist` records the key names |
 | `ssh/` | keypair + `known_hosts`, bind-mounted to `/home/ibgateway/.ssh` | generated once; required whenever `SSH_TUNNEL=yes` |
 | `data/` | bastion's read-only `/etc/passwd`, `/etc/shadow`, `/etc/ssh`, `/home` | `bastion/provision.sh`, run inside the bastion image (see `docs/RUNBOOK.md`) |
 | `config/` | X/xrdp runtime state | created by the container |
@@ -386,7 +386,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 117 tests as of 2026-08-30, a count
+  container, no network, no credentials. 118 tests as of 2026-08-30, a count
   `tests/unit/docs.bats` holds to the suite.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it

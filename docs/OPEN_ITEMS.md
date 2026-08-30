@@ -102,11 +102,32 @@ Verified 2026-08-25, both directions: `.env.bak` is ignored, and after
 `git add -f .env.bak` the hook fails with an explanatory message; `.env-dist`
 passes untouched.
 
-### 3. Credential files are world-readable — **FIXED**
+### 3. Credential files are world-readable — **FIXED 2026-08-25, finished 2026-08-30**
 
 `chmod 600 .env .env.bak` in the deployment checkout (they are untracked, so
 this is host state, not a commit). `cert.pem` is a public certificate and stays
 `0644`; `key.pem` and `ssh/id_ed25519` were already `0600`.
+
+**That fix reached one file of five, and this item said FIXED for five days
+anyway.** Audited on 2026-08-30: `bastion/.env` here, and both `.env` and
+`bastion/.env` in the deployment the containers actually read
+(`modules/p00_apps/ib-docker` inside Investio), were all still `664` — group-
+and world-readable. Only `.env` and `.env.bak` in this checkout had ever been
+chmod'd. All five are `600` now. The exposure was live for this checkout, whose
+parent directories are world-traversable, and latent for the vendored one, whose
+directory is `drwx------` — so the file nobody had looked at was the one that
+mattered.
+
+**A mode is not in git**, so nothing carried it between the two trees and
+nothing noticed it reverting; `cp .env-dist .env`, the documented way to create
+the file, leaves it at the umask default. Both halves are addressed:
+`tests/unit/credentials.bats` fails on any real env file readable beyond its
+owner and skips where there is none, so CI and a fresh clone stay green while a
+developer's or a deployment's machine is checked; and the four places that say
+`cp .env-dist .env` — `CONTRIBUTING.md`, `bastion/README.md`, the table in
+`CLAUDE.md` and `template_README.md` — now say `chmod 600` in the same breath.
+The check was shown red at `664`, green at `600`, still green with `.env-dist`
+left `664` beside it, and red again when a second file regressed.
 
 ## Medium
 

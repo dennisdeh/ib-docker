@@ -67,6 +67,7 @@ We will clone the git repository to use it as a template and set our preferences
 git clone https://github.com/dennisdeh/ib-docker.git
 cd ib-docker/bastion
 cp .env-dist .env
+chmod 600 .env # cp leaves it at your umask; this file holds credentials
 nano .env # edit env variables
 nano docker-compose.yml # edit docker compose file
 docker compose config # verify compose file

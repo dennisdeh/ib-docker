@@ -155,3 +155,48 @@ run_set_password() {
 	run cat "${TMP}/chpasswd"
 	[ "$output" = 'abc:a-real-password' ]
 }
+
+# Every file .gitignore treats as a real environment file - the same shape the
+# `no-real-env-files` pre-commit hook matches - that actually exists in this
+# tree. `.env-dist` is excluded: it is tracked, holds no values, and is the key
+# list two compose files are read against.
+real_env_files() {
+	find "$ROOT" \
+		-name .git -prune -o \
+		-name .venv -prune -o \
+		-name .claude -prune -o \
+		-type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) \
+		! -name '*.env-dist' -print 2>/dev/null || true
+}
+
+@test "credentials: a real env file is readable only by its owner" {
+	# A file mode is not in git, so nothing carries it between machines and
+	# nothing notices it changing back. `cp .env-dist .env` creates the file at
+	# the umask default - 664 on this machine - and that is how four of the five
+	# real env files here sat group- and world-readable for five days *after*
+	# docs/OPEN_ITEMS.md #3 was marked FIXED, having only ever chmod'd one of
+	# them. Two of the four were the files the live deployment reads.
+	#
+	# The property is "no group or other bits", not "exactly 600", so 400 and
+	# 700 pass too.
+	local f mode bad='' n=0
+	while IFS= read -r f; do
+		[ -n "$f" ] || continue
+		n=$((n + 1))
+		mode="$(stat -c '%a' "$f")"
+		case "$mode" in
+		*00) ;;
+		*) bad="${bad}
+  ${mode}  ${f#"${ROOT}/"}" ;;
+		esac
+	done < <(real_env_files)
+
+	# A fresh clone and CI have none of these; there is nothing to assert there.
+	[ "$n" -gt 0 ] || skip "no real env file in this tree"
+
+	[ -z "$bad" ] || {
+		echo "these hold credentials and are readable beyond their owner:${bad}"
+		echo "chmod 600 them. A mode is not tracked, so this can only be caught here."
+		return 1
+	}
+}

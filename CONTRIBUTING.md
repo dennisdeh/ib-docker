@@ -90,6 +90,7 @@ python3 -m venv .venv
 
     ```bash
     cp .env-dist .env     # once; then fill it in
+    chmod 600 .env        # cp leaves it at your umask, usually world-readable
     nano .env
 
     # Name the service: docker-compose.yml holds both ib-gateway and tws

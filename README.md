@@ -270,7 +270,7 @@ services:
 
 ```
 
-Create an .env on root directory. You can use the provided [.env-dist](https://github.com/dennisdeh/ib-docker/blob/master/.env-dist) as a starting point. Example .env file:
+Create an .env on root directory. You can use the provided [.env-dist](https://github.com/dennisdeh/ib-docker/blob/master/.env-dist) as a starting point — and `chmod 600` it, because `cp` leaves the copy at your umask and this file holds your IB password. Example .env file:
 
 ```bash
 # which image to run: ib-gateway, tws, or both
