@@ -24,13 +24,9 @@ actually outstanding.
 
 ## Still open, as of 2026-08-30 (second sweep)
 
-A container security audit that day added items **#35-#45**. Most are fixed in
-the same commit; the table below is what is genuinely outstanding.
-
-| # | what | why it is still open |
-|---|---|---|
-| #44 | The live bastion's two `authorized_keys` carry no restrictions | Operational, not a code change: the files live in the deployment's `data/home`, and `deploy/provision.sh` already writes them correctly for anything provisioned since 2026-08-27. The running pair predates it (June) and needs an operator to edit and restart from the owning checkout. |
-| #45 | The **running containers** lag the published images | Not the images: #39 shipped those the moment this commit merged, with no dispatch. `inv_gateway` and `inv_bastion` were recreated at 13:27 on 2026-08-30 onto `5fabe41` and so predate `001bc89` by one commit. Closing it is `docker compose pull && up -d` **from the owning checkout**, which is not this one. |
+A container security audit that day added items **#35-#45**. All of them are
+now closed — the last three, #43 in the image and #44/#45 on the deployment,
+later the same day.
 
 **The previous claim here — "Still open: Nothing" — was true of the source tree
 and false of every artefact an operator could pull**, which is what #39 is
@@ -912,7 +908,7 @@ this change rather than the image.
 start-up uses setuid `sudo` to drop root to `abc`, and that interaction remains
 unmeasured. Removing the group membership does not need it.
 
-### 44. The live bastion's `authorized_keys` carry no restrictions — **OPEN (operational)**
+### 44. The live bastion's `authorized_keys` carry no restrictions — **FIXED 2026-08-30**
 
 Both keys on the running bastion are bare three-field lines; `sshd -T` reports
 `permitopen any` / `permitlisten any`, with no `Match` block and an empty
@@ -923,10 +919,42 @@ and `-W` all succeeded. The gateway's own reverse tunnel means the far end dials
 accept dialog: a key holder gets a trusted, order-capable session.
 `deploy/provision.sh` has written both directions correctly since 2026-08-27 and
 `tests/unit/provision.bats` pins it; the live keys are dated 15 and 20 June and
-were never re-provisioned. Nothing in this repository can fix that — it is an
-edit to the deployment's `data/home` and a restart from the owning checkout.
+were never re-provisioned.
 
-### 45. The running containers lag the published images — **OPEN (operational)**
+**Applied by the owner on 2026-08-30**, prepending the option lists to the two
+existing lines rather than re-provisioning, which would have rotated the
+keypairs and locked out both clients. The result is byte-identical to what
+`gateway_authorized_key` and `client_authorized_key` produce for port 4002 —
+checked by generating from those functions and diffing against the live files.
+`sshd` confirms it parses: *"Accepted key ED25519 … found at
+/home/ibgateway/.ssh/authorized_keys:1"*. No restart was needed, because `sshd`
+reads the file per connection; the established tunnel was undisturbed and
+`127.0.0.1:9898` never stopped answering.
+
+*Semantics measured on a throwaway `sshd`, since the live private key is
+passphrase-protected and its passphrase is not something to put on a command
+line:*
+
+| key | `-R` 4002 | `-R` other | `-L` → 4002 | `-L` → other |
+|---|---|---|---|---|
+| bare, as it was | allowed | allowed | allowed | allowed |
+| gateway | **allowed** | refused | refused | refused |
+| client | refused | refused | **allowed** | refused |
+
+Both spellings of the permitted port work (`127.0.0.1:4002` and
+`localhost:4002`), which is why `provision.sh` writes both.
+
+*Three things make this hard to measure, and cost four wrong harnesses here.*
+`useradd` leaves the account locked, and `sshd` then refuses every key
+regardless of its options — so everything looks restricted. `-L` only opens a
+listener on the **client**, so the server is never asked and
+`ExitOnForwardFailure` cannot see a refusal; use `-W`, which opens the channel
+immediately. And `-W` reports a refusal identically whether the policy denied it
+or nothing was listening on the target, so the target port needs a live
+listener. Always run the bare-key baseline first: without it, a broken harness
+and a working restriction look the same.
+
+### 45. The running containers lag the published images — **FIXED 2026-08-30**
 
 *Rewritten 2026-08-30 after the fact it described stopped being true, twice
 over. As written it said the published images lagged the source and that "the
@@ -940,9 +968,17 @@ commit merged, with no dispatch at all, which is the point of it: measured on
 the artefacts the same afternoon, `ib-gateway`, `tws-rdesktop` and `bastion` all
 carry `org.opencontainers.image.revision=001bc89`.
 
-What is left is one hop further down. `inv_gateway` and `inv_bastion` were
-recreated at 13:27 and run `5fabe41`, so they are a commit behind what is
-published — they have the dropped sudo grant, and not this commit's hardening.
-Nothing in this repository can close that: the containers belong to the Investio
-checkout, and `docker compose pull && up -d` there is an operator action. See
-`docs/RUNBOOK.md`.
+What was left was one hop further down: the containers ran `5fabe41` while
+`a5e6966` was published.
+
+**Closed by the owner the same evening** with `docker compose pull && up -d`
+from the Investio checkout — a Sunday inside IB's weekend window, which is the
+cheapest time to restart a gateway. Both containers now report
+`org.opencontainers.image.revision=a5e6966`, the bastion is `healthy`,
+`127.0.0.1:9898` answers, IBC logged the paper account back in, and `sudo` is
+absent from the running gateway — so the hardening is live in the container the
+other `inv_*` services actually talk to, not merely in a registry.
+
+That the bastion reports *healthy* is itself new: until #38 that probe ended
+every branch in an `echo` and exited 0 unconditionally, so the word meant
+nothing.
