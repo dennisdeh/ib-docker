@@ -47,3 +47,17 @@ repos:
       Only .env-dist is tracked; it records the key names. See CLAUDE.md.
     files: '(^|/)\.env($|\.)|(^|/)[^/]*\.env$'
     exclude: '(^|/)[^/]*\.env-dist$'
+  # config.ini and jts.ini are rendered from the templates with the IB password
+  # substituted in, and both docker-compose.yml and the README suggest bind
+  # mounting them from the repository root. The .env pattern above does not
+  # match them and detect-private-key only looks for PEM blocks, so until
+  # 2026-08-30 nothing but .gitignore stood between a documented customisation
+  # and broker credentials in a public repository. The templates keep their
+  # .tmpl suffix and are unaffected.
+  - id: no-rendered-ibc-config
+    name: refuse to commit a rendered config.ini or jts.ini
+    language: fail
+    entry: >-
+      This file is rendered from a .tmpl with the IB password substituted in
+      and must never be committed. Edit image-files/config/**/*.tmpl instead.
+    files: '(^|/)(config|jts)\.ini$'

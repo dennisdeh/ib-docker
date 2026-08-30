@@ -6,6 +6,14 @@
 !.env-dist
 !*.env-dist
 tws_settings/
+# Rendered IBC/Gateway config. `apply_settings()` writes the cleartext IB
+# password into config.ini, and docker-compose.yml and the README both suggest
+# bind-mounting it from here - a mount writes through in place, so following
+# the documented customisation puts broker credentials at the repo root. The
+# `/config/` line below covers the DIRECTORY the TWS image uses and reads as
+# if it covered these; it does not.
+/config.ini
+/jts.ini
 ssh/
 /config/
 .python-version

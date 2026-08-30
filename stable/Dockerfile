@@ -10,7 +10,7 @@ FROM ubuntu:24.04 AS setup
 
 ENV IB_GATEWAY_VERSION=10.45.1j
 ENV IB_GATEWAY_CHANNEL=stable
-ENV IBC_VERSION=3.24.1
+ENV IBC_VERSION=3.24.2
 ARG DEBIAN_FRONTEND=noninteractive
 ARG IB_GATEWAY_REPO="https://github.com/dennisdeh/ib-docker"
 ARG IB_GATEWAY_RELEASE_URL="${IB_GATEWAY_REPO}/releases/download/ibgateway-${IB_GATEWAY_CHANNEL}%40${IB_GATEWAY_VERSION}"
@@ -22,7 +22,7 @@ ARG IBC_URL="${IBC_REPO}/releases/download/${IBC_VERSION}/${IBC_FILE}"
 # named above, and of no other version. .github/workflows/detect-ibc-release.yml
 # recomputes it when it opens a version-bump PR, and verifies it on every daily
 # run; tests/unit/dockerfile.bats pins the version-to-digest pairing offline.
-ARG IBC_SHA256=d99ee28cc3539e3843fb00d28dc484c255006b0063d38f0808ac3ef07dd88bb8
+ARG IBC_SHA256=cc097ca1dfa75413a5fbe02e4743050af15f3308eb6a97c769b3cff9850c80c5
 
 WORKDIR /tmp/setup
 

@@ -46,8 +46,12 @@ Between them they include:
 - xrdp/xfce enviroment for TWS. Build on top of [linuxserver/rdesktop](https://github.com/linuxserver/docker-rdesktop/).
 - [socat](https://manpages.ubuntu.com/manpages/noble/en/man1/socat.1.html) a
   tool to accept TCP connection from non-localhost and relay it to IB Gateway
-  from localhost (IB Gateway restricts connections to container's 127.0.0.1 by
-  default).
+  from localhost. Note what this does and does not mean: IB Gateway *trusts*
+  127.0.0.1 (`TrustedIPs` in `jts.ini`), but it does not *bind* to it - measured
+  2026-08-30, the API socket listens on `[::]`. socat opens a fresh connection
+  to loopback, so every client reaching the socat port is seen by the API as
+  local and is trusted. Whatever can reach container port 4003/4004 has the
+  account.
 - Optional remote [SSH tunnel](https://manpages.ubuntu.com/manpages/noble/en/man1/ssh.1.html)
   to provide secure connections for both IB Gateway and VNC. Only available for
   `10.19.2g-stable` and `10.25.1o-latest` or greater.
@@ -81,10 +85,10 @@ tunnel dials — for `linux/amd64` and `linux/arm64`, with the following tags:
 | Image| Channel  | IB Gateway Version  | IBC Version      | Docker Tags                                    |
 | --- | -------- | ------------------- | ---------------- | ---------------------------------------------- |
 | [ib-gateway][1] | `latest` | `10.50.1e` | `3.24.2` | `latest` `10.50` `10.50.1e` |
-| [ib-gateway][1] |`stable` | `10.45.1j` | `3.24.1` | `stable` `10.45` `10.45.1j` |
+| [ib-gateway][1] |`stable` | `10.45.1j` | `3.24.2` | `stable` `10.45` `10.45.1j` |
 | [tws-rdesktop][2] | `latest` | `10.50.1e` | `3.24.2` | `latest` `10.50` `10.50.1e` |
-| [tws-rdesktop][2] |`stable` | `10.45.1j` | `3.24.1` | `stable` `10.45` `10.45.1j` |
-| [bastion][3] | — | — | — | `latest` `2604.03` |
+| [tws-rdesktop][2] |`stable` | `10.45.1j` | `3.24.2` | `stable` `10.45` `10.45.1j` |
+| [bastion][3] | — | — | — | `latest` `2604.04` |
 
 All tags are available in the container repository for [ib-gateway][1] and
 [tws-rdesktop][2]. IB Gateway and TWS share the same version numbers and tags.
@@ -304,7 +308,7 @@ TWS_SETTINGS_PATH=
 TWS_ACCEPT_INCOMING=
 TRADING_MODE=paper
 READ_ONLY_API=no
-VNC_SERVER_PASSWORD=myVncPassword
+VNC_SERVER_PASSWORD=
 TWOFA_TIMEOUT_ACTION=restart
 TWOFA_DEVICE=
 BYPASS_WARNING=
@@ -384,7 +388,7 @@ All environment variables are common between ibgateway and TWS image, unless spe
 | `TWS_PASSWORD_PAPER` | If `TRADING_MODE=both`, then this is required to pass paper account password  | **not defined**  |
 | `TWS_PASSWORD_PAPER_FILE` | If `TRADING_MODE=both`, then this is required to pass paper account password. See [credentials section](#credentials).  | **not defined**  |
 | `READ_ONLY_API`  | **yes** or **no**. [See IBC documentation](https://github.com/IbcAlpha/IBC/blob/master/userguide.md)  | **not defined** |
-| `VNC_SERVER_PASSWORD`  | VNC server password. If not defined, then VNC server will NOT start. Specific to ibgateway, ignored by TWS. See [credentials section](#credentials). | **not defined** (VNC disabled) |
+| `VNC_SERVER_PASSWORD`  | VNC server password. If not defined, then VNC server will NOT start. Specific to ibgateway, ignored by TWS. **VNC authentication is DES over the first 8 characters only**, so a longer password is no stronger - pick 8 characters of real entropy. x11vnc binds every interface in the container, so this password is the only thing in front of a logged-in trading session's display. See [credentials section](#credentials). | **not defined** (VNC disabled) |
 | `VNC_SERVER_PASSWORD_FILE`  | VNC server password. If not defined, then VNC server will NOT start. Specific to ibgateway, ignored by TWS. | **not defined** (VNC disabled) |
 | `TWOFA_TIMEOUT_ACTION`      | 'exit' or 'restart', set to 'restart if you set `AUTO_RESTART_TIME`. See IBC [documentation](https://github.com/IbcAlpha/IBC/blob/master/userguide.md#second-factor-authentication)  | exit  |
 | `TWOFA_DEVICE` | second factor authentication device. See IBC [documentation](https://github.com/IbcAlpha/IBC/blob/c98d0bcc2ead9b8ab3900a23a707f01f8fd7dfbc/resources/config.ini#L104) | **not defined** |
@@ -455,7 +459,7 @@ TWS, `SSH_LISTEN_PORT` for the bastion — so two stacks can run side by side
 without editing the compose file. See
 [.env-dist](https://github.com/dennisdeh/ib-docker/blob/master/.env-dist).
 
-Utility [socat](https://manpages.ubuntu.com/manpages/noble/en/man1/socat.1.html) is used to publish TWS API port from container's `127.0.0.1:4001/4002` to container's `0.0.0.0:4003/4004`, the sample `docker-compose.yml` maps ports to the host back to `4001/4002`. This way any application can use the "standard" IB Gateway ports. For TWS `127.0.0.1:7496/7497` to container's `0.0.0.0:7498/7499`, and the `tws` service will map ports to host back to `7496/7497`.
+Utility [socat](https://manpages.ubuntu.com/manpages/noble/en/man1/socat.1.html) is used to publish the TWS API port from container port `4001/4002` to container's `0.0.0.0:4003/4004`, and the sample `docker-compose.yml` maps those back to `4001/4002` on the host's loopback. (The API port itself is *trusted* on 127.0.0.1 rather than *bound* to it; see [Leaving localhost](#leaving-localhost).) This way any application can use the "standard" IB Gateway ports. For TWS `127.0.0.1:7496/7497` to container's `0.0.0.0:7498/7499`, and the `tws` service will map ports to host back to `7496/7497`.
 
 Note that with the above `docker-compose.yml`, ports are only exposed to the docker host (127.0.0.1), but not to the host network. To expose it to the host network change the port mappings on accordingly (remove the '127.0.0.1:'). **Attention**: See [Leaving localhost](#leaving-localhost)
 
@@ -628,8 +632,14 @@ Suitable for testing. It does not expose API port to host network, host must be 
   ```
 
 - Available for other services in same docker network. Services with access to
-  `trader` network can access IB Gateway through hostname `ib-gateway` (same
-  than service name). Secure setup, although host should be trusted.
+  the `trader` network can access IB Gateway through hostname `ib-gateway` (same
+  as the service name). **This is not an access control.** socat re-originates
+  every client as 127.0.0.1, which is the address `TrustedIPs` trusts, so any
+  container on that network gets an authenticated, order-capable API session -
+  and so does anything that later joins the network. Docker has no per-port
+  ACL, so the network boundary is the whole of the protection. Put only
+  containers you would hand the account to on it, and prefer the SSH tunnel
+  below, which authenticates each client with its own restricted key.
 
   ```yaml
   services:

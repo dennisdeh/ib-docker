@@ -10,7 +10,7 @@ ARG APT_PROXY
 # touching this directory publishes whatever it says. It was previously used by the LABEL below
 # without ever being declared, which made every image report version
 # "-resolute".
-ARG IMAGE_VERSION=2604.03
+ARG IMAGE_VERSION=2604.04
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # apt is retried because ports.ubuntu.com - the aarch64 mirror, and only it -
 # intermittently serves an index referencing a .deb its pool 404s on, which
@@ -58,9 +58,19 @@ COPY bastion_banner.txt /
 
 # The healthcheck needs bash's /dev/tcp redirection, which JSON exec form
 # cannot express, so DL3025 does not apply here.
+# Every branch of this used to end in an `echo`, with a trailing
+# `|| echo "Connection timeout"` swallowing the rest, so the command exited 0
+# whatever happened and the container could never report unhealthy - measured
+# 2026-08-30 with sshd stopped. `depends_on: condition: service_healthy` in the
+# compose deploy/provision.sh emits was therefore gating on nothing. The probe
+# is now the connect itself: bash exits non-zero when /dev/tcp cannot connect,
+# and `timeout` exits 124 when it hangs. 0.0.0.0 is a listen address, not a
+# destination; 127.0.0.1 is what a client actually dials.
+# The interval was 30m, so a dead bastion stayed "healthy" for half an hour.
+# See docs/OPEN_ITEMS.md #38.
 # hadolint ignore=DL3025
-HEALTHCHECK --interval=30m --timeout=15s --start-period=10s \
-  CMD timeout 1 bash -c '</dev/tcp/0.0.0.0/22 && echo "SSH Bastion running" || echo "Port is closed"' || echo "Connection timeout"
+HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
+  CMD timeout 2 bash -c '</dev/tcp/127.0.0.1/22'
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/sbin/sshd", "-D", "-e"]

@@ -200,3 +200,43 @@ real_env_files() {
 		return 1
 	}
 }
+
+# ---------------------------------------------------------------------------
+# Shipped defaults
+#
+# .env-dist carried VNC_SERVER_PASSWORD=myVncPassword until 2026-08-30 - a
+# working credential published in a public repository, which at least one
+# deployment was still running unchanged. start_vnc() already declines to start
+# x11vnc when the value is empty, and template_README.md already documents the
+# default as "not defined (VNC disabled)", so the file was contradicting its own
+# documentation. x11vnc binds every interface in the container, so the password
+# is the only thing in front of a logged-in trading session's display - and VNC
+# authentication is DES over the FIRST 8 CHARACTERS ONLY, so a long one is no
+# stronger. See docs/OPEN_ITEMS.md #40.
+
+@test "env-dist: ships no working VNC password" {
+	local root value
+	root="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
+	value="$(sed -n 's/^VNC_SERVER_PASSWORD=//p' "${root}/.env-dist" | head -1)"
+	[ -z "$value" ] || {
+		echo ".env-dist ships a working VNC password: '${value}'"
+		echo "x11vnc binds all interfaces; leave it empty so no server starts."
+		return 1
+	}
+}
+
+@test "env-dist: still documents the VNC key so it can be found" {
+	local root
+	root="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
+	run grep -qE '^VNC_SERVER_PASSWORD=' "${root}/.env-dist"
+	[ "$status" -eq 0 ] || {
+		echo "the key itself must stay, so the reader knows it exists"
+		return 1
+	}
+	# and the 8-character truncation is stated where the value is set
+	run grep -qiE '8 characters|first 8' "${root}/.env-dist"
+	[ "$status" -eq 0 ] || {
+		echo "nothing warns that VNC uses only the first 8 characters"
+		return 1
+	}
+}

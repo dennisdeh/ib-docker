@@ -111,7 +111,16 @@ jobs:
           do
             download_url="https://download2.interactivebrokers.com/installers/ibgateway/${CHANNEL}-standalone/ibgateway-${CHANNEL}-standalone-linux-${arch}.sh"
             dest="ibgateway-${BUILD_VERSION}-standalone-linux-${arch}.sh"
-            curl -sSL "$download_url" --output "$dest"
+            # -f matters, and this line went without it until 2026-08-30:
+            # curl exits 0 on a 404, writes the error page to the installer
+            # filename, and the sha256sum below then mints a VALID digest over
+            # it. The pair is uploaded to the release and the backfill step
+            # above only tests that an asset is PRESENT, so nothing repairs it.
+            # The build fails loudly at the checksum step rather than shipping
+            # a bad image, but the release asset is permanently wrong.
+            # The backfill step above already uses -sSLf; so does
+            # Dockerfile.template. See docs/OPEN_ITEMS.md #35.
+            curl -sSLf "$download_url" --output "$dest"
             sha256sum "$dest" > "${dest}.sha256"
           done
 

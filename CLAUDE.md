@@ -207,11 +207,19 @@ makes the container refuse to start — that is the feature, not a bug.
   after shipping it wrong in both directions; pinned by
   `tests/unit/provision.bats`.
 - **Ports: the number the host publishes is the socat port, not the API port.**
-  `set_ports()` in `image-files/scripts/common.sh` binds IB Gateway's API to
-  4002 (paper) / 4001 (live) on the container's own loopback, and socat forwards
-  it to 4004 / 4003, which is what compose publishes. Locally that is
-  `9898 → 4004` (paper) and `9899 → 4003` (live). A client pointed at container
-  port 4002 will never connect; that is correct behaviour.
+  `set_ports()` in `image-files/scripts/common.sh` chooses 4002 (paper) / 4001
+  (live) for the API and 4004 / 4003 for socat, which is what compose publishes.
+  Locally that is `9898 → 4004` (paper) and `9899 → 4003` (live).
+  **`set_ports()` does not bind anything, and the API is not on loopback.**
+  This file, `docs/DECISIONS.md` #4 and `template_README.md` all said it was
+  until 2026-08-30; measured that day, IB Gateway's own socket is
+  `[::]:4002` — all interfaces — so a container sharing the network can reach
+  it directly. IBC exposes no setting for that bind (`BindAddress` in
+  `config.ini` governs the Command Server, which is off), so the control is
+  `TrustedIPs=127.0.0.1` plus who is on the network — **and socat defeats the
+  first**, because it opens a fresh connection to loopback and every client is
+  therefore seen as local. Whatever can reach container port 4003/4004 has an
+  authenticated, order-capable session. See `docs/DECISIONS.md` #4.
 - **`SSH_REMOTE_PORT`, `SSH_VNC_PORT` and `SSH_RDP_PORT` name the port *inside
   the container*, not on the server.** In `ssh -R bind:port:host:hostport` the
   first port is the remote one, and `run_ssh.sh` always passes `API_PORT` (or
@@ -386,7 +394,7 @@ tests/run.sh all
 - `tests/unit/` sources the pure functions directly, plus `compose.bats`, which
   reads `docker-compose.yml` and `.env-dist` as text, and `workflows.bats`,
   which does the same for the release automation in `.github/workflows/` — no
-  container, no network, no credentials. 120 tests as of 2026-08-30, a count
+  container, no network, no credentials. 135 tests as of 2026-08-30, a count
   `tests/unit/docs.bats` holds to the suite.
 - **`workflows.bats` also *runs* the shell those workflows contain.** Its
   `step_script()` lifts a step's `run:` body out of the YAML and executes it

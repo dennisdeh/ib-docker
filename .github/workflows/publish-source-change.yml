@@ -1,0 +1,107 @@
+name: "Publish on source change"
+
+# Republish the gateway and TWS images when what they contain changes.
+#
+# Until 2026-08-30 nothing did. `publish.yml` starts on a `workflow_call` from
+# `detect-releases.yml`, on a `v*` tag, or on a manual dispatch - so a security
+# fix merged to master reached ghcr.io only when Interactive Brokers happened to
+# ship a new Gateway version. Three hardening commits sat unshipped that way,
+# including the one that removed the container user's passwordless root
+# (`a60935b`), while `ghcr.io/dennisdeh/ib-gateway:latest` - the image the
+# deployment was actually running - still granted it.
+#
+# `publish-bastion.yml` already had its own push trigger and was current. This
+# is that pattern applied to the other two images. See docs/OPEN_ITEMS.md #39.
+#
+# WHICH PATHS, AND WHY NOT THE TEMPLATES
+#
+#   image-files/**            the only place scripts and configs may be edited,
+#                             so every hand-made change to shipped runtime
+#                             behaviour lands here.
+#   <channel>/Dockerfile      a change to Dockerfile.template only ships once
+#   <channel>/Dockerfile.tws  `update.sh` has regenerated the channels, and it
+#                             is the generated file that gets built. Watching
+#                             these rather than the templates is what keeps an
+#                             IBC bump from publishing: `detect-ibc-release.yml`
+#                             edits the templates and deliberately does NOT run
+#                             `update.sh`, so the channel Dockerfiles do not
+#                             move and nothing here fires. See DECISIONS.md #2.
+#
+# A release bot's version bump does touch <channel>/Dockerfile, so merging one
+# of its PRs republishes images `detect-releases.yml` has already pushed. That
+# is redundant rather than wrong - the same tags are overwritten with equivalent
+# content - and it is the safe direction for a security trigger to err in.
+# See docs/DECISIONS.md #37.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'image-files/**'
+      - 'latest/Dockerfile'
+      - 'latest/Dockerfile.tws'
+      - 'stable/Dockerfile'
+      - 'stable/Dockerfile.tws'
+      - '.github/workflows/publish-source-change.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # publish.yml takes `version` as a required input and only falls back to the
+  # channel Dockerfile when it is empty. Empty is not safe to pass from here:
+  # under `workflow_call` the event name is still the caller's `push`, so its
+  # resolve step would read `github.ref_name` - `master` - and fail its own
+  # version regex. So the version is resolved here, from the same line
+  # publish.yml checks the built image against.
+  resolve:
+    name: Read each channel's version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      latest: ${{ steps.v.outputs.latest }}
+      stable: ${{ steps.v.outputs.stable }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve versions
+        id: v
+        run: |
+          for channel in latest stable; do
+            version="$(grep 'ENV IB_GATEWAY_VERSION=' "${channel}/Dockerfile" | head -1 | cut -d '=' -f 2)"
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9a-z]+$ ]]; then
+              echo "::error::${channel}/Dockerfile declares no usable IB_GATEWAY_VERSION: '${version}'"
+              exit 1
+            fi
+            echo "${channel}=${version}" >> "$GITHUB_OUTPUT"
+            echo "${channel}: ${version}"
+          done
+
+  publish-latest:
+    name: Publish latest
+    needs: resolve
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      channel: latest
+      version: ${{ needs.resolve.outputs.latest }}
+    secrets: inherit
+
+  publish-stable:
+    name: Publish stable
+    needs: resolve
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      channel: stable
+      version: ${{ needs.resolve.outputs.stable }}
+    secrets: inherit

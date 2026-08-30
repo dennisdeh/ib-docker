@@ -22,9 +22,22 @@ where it is rather than being renumbered or deleted. Most of what follows is
 therefore a record of something already repaired; the table below is what is
 actually outstanding.
 
-## Still open, as of 2026-08-30
+## Still open, as of 2026-08-30 (second sweep)
 
-**Nothing.** Every item in this file is marked FIXED or MITIGATED, or has moved
+A container security audit that day added items **#35-#43**. Most are fixed in
+the same commit; the table below is what is genuinely outstanding.
+
+| # | what | why it is still open |
+|---|---|---|
+| #43 | The TWS image's `abc` account is root-equivalent | The grant is in the linuxserver base (`%sudo ALL=(ALL:ALL) NOPASSWD: ALL` plus membership of gid 27), so removing it needs a `RUN` line in `Dockerfile.tws.template` that survives s6's `init-adduser`, and that needs a runtime test against a 5 GB image. `no-new-privileges` on the tws service would neuter it, but s6 drops root to `abc` and the interaction was not measured, so it was not added blind. |
+| #44 | The live bastion's two `authorized_keys` carry no restrictions | Operational, not a code change: the files live in the deployment's `data/home`, and `deploy/provision.sh` already writes them correctly for anything provisioned since 2026-08-27. The running pair predates it (June) and needs an operator to edit and restart from the owning checkout. |
+| #45 | The published gateway and TWS images lag the source tree | #39 fixes it for every future change. The images that are out there now still need one `publish.yml` dispatch per channel; nothing in this repository can do that for itself. |
+
+**The previous claim here — "Still open: Nothing" — was true of the source tree
+and false of every artefact an operator could pull**, which is what #39 is
+about. Say which of the two a statement like that describes.
+
+Everything else in this file is marked FIXED or MITIGATED, or has moved
 to `DECISIONS.md` as something examined and settled. The last three to go, all
 on 2026-08-30, were #9 (the sudo grant, which had been waiting on a decision
 rather than a patch), #14 and #24. The table was empty for the first time that
@@ -735,3 +748,156 @@ wiring offline.
 | 30 | `LABEL org.opencontainers.image.version=${IB_GATEWAY_VERSION}-${IB_GATEWAY_RELEASE_CHANNEL}` in `Dockerfile.template`, whose second variable was defined nowhere in that file — **FIXED 2026-08-30** | The setup stage declares `ENV IB_GATEWAY_CHANNEL`; the runtime stage that carries this `LABEL` declares neither name, so the label expands to the version and a trailing dash. Measured 2026-08-30 by building the same three lines: the value is `"10.50.1e-"`. `docker build --check` reports it as `UndefinedVar` on `latest/Dockerfile:145` and `stable/Dockerfile:145`. Only local builds are affected — `docker/metadata-action` overwrites this label at publish time with `<version>-<channel>`, which is what all three published images carry (measured the same day), the same override that hid #28. `Dockerfile.tws.template` never had the bug: its runtime stage declares `IB_GATEWAY_RELEASE_CHANNEL` itself, and the fix is that same line, in the same position, in the gateway's runtime stage — declaring the name again rather than renaming anything, since renaming an `ENV` a published image already carries would break anyone reading it. Verified both ways on 2026-08-30: `docker build --check` on `latest/Dockerfile` and `stable/Dockerfile` drops from three warnings to two, the `IB_GATEWAY_RELEASE_CHANNEL` one gone, and the same three lines built again now label `"10.50.1e-latest"`. `tests/unit/images.bats` fails if any `LABEL` in a final stage uses a variable that stage does not declare — the general form of this and of the bastion's `-resolute` bug, shown red against the unfixed template, where it named that file and only that file. The other two `UndefinedVar` warnings on those files are the self-referencing `ARG USER_ID="${USER_ID:-1000}"` / `USER_GID` defaults, which resolve to `1000` as intended — noise, not a defect, and left alone. |
 | 31 | a bastion-only fix reached the published image only at the next IB Gateway release, and `tests/run.sh container` was red until it did — **FIXED 2026-08-30** | Found while verifying #9, and not part of it. `publish.yml` pushed the bastion but only ever ran on an IB Gateway release or by hand, so `bastion/entrypoint.sh`'s #26 CA fix of 2026-08-29 was not in `ghcr.io/dennisdeh/bastion:latest`, which was built 2026-08-27. Measured the same day: four `bastion_ca.bats` cases fail against the published image and all thirteen pass against one built from this tree. The bastion's build steps moved to `.github/workflows/publish-bastion.yml`, which declares `packages: write` itself and triggers on a push to `master` touching `bastion/**` — and which `publish.yml` now *calls*, so an IB release still refreshes the image against its Ubuntu base. One definition, two reasons to run it; `DECISIONS.md` #22 records the reasoning it replaces. `ARG IMAGE_VERSION` went to `2604.02` with it: the CA fix changed behaviour on 2026-08-29 without a bump, and an unbumped version overwrites its tag. **The workflow itself is in the trigger's path list**, so merging this publishes the bastion — which is also the only way a workflow that cannot be run locally gets exercised at all. `tests/unit/workflows.bats` pins the trigger, the branch restriction and the permission. |
 | 32 | no workflow declared `concurrency:`, so two runs could push the same tag at once — **FIXED 2026-08-30** | Found during the workflow audit. `publish-bastion.yml` has three ways in and `publish.yml` four, so a push to `master` touching `bastion/**` at 06:00 UTC could overlap the daily `detect-releases.yml` run and push the same bastion tag twice. A manifest push is atomic and both builds are of the same commit, so the loser wasted a build rather than corrupting a tag — which is why this was Low. `publish.yml` now keys its group on the channel, from the `channel` input and falling back to the ref name on a tag push, so the two legs of a release still run in parallel — `fail-fast: false` there exists to keep them independent — while two runs of one channel queue. `publish-bastion.yml` groups on one name, which is the queue that matters most: a two-channel release reaches it twice. Both set `cancel-in-progress: false`, and that is the half worth pinning — cancelling a half-finished multi-architecture push leaves the registry holding some manifests and not others, where queueing costs minutes and leaves it consistent. `tests/unit/workflows.bats` fails on a missing group, on `cancel-in-progress: true`, and on a `publish.yml` group that has lost the channel; shown red against all three. |
+
+---
+
+## Container security audit, 2026-08-30
+
+Twelve parallel audit lenses over the tree and the built images, then adversarial
+verification of the load-bearing claims. Severities are the post-verification
+ones: the first reading over-rated several, and one lens was refuted outright.
+
+### 35. `detect-releases.yml` mints a valid checksum for an HTTP error page — **FIXED**
+
+The installer download was `curl -sSL "$download_url" --output "$dest"` with no
+`-f`. curl exits 0 on a 404, writes the error body to the installer filename,
+and the next line `sha256sum`s it into this repository's authoritative digest.
+Both are uploaded to the GitHub release, and the backfill step above tests only
+that an asset is *present*, so nothing ever repairs it. Reproduced offline
+2026-08-30. The build then fails loudly at its own `sha256sum --check` rather
+than shipping a bad image, so this is release-artefact integrity, not a path to
+a poisoned image. `-f` added; the sibling backfill step already had it, and
+`Dockerfile.template`'s comment already said `-f` matters.
+Pinned by `tests/unit/workflows.bats`, shown red first.
+
+### 36. `JAVA_HEAP_SIZE` reaches GNU sed's `e` flag — **FIXED**
+
+`set_java_heap()` splices the value into `sed -i "s/-Xmx768m/-Xmx${JAVA_HEAP_SIZE}m/g"`.
+A value carrying `/` and `;` closes the command and opens another, and sed's `e`
+flag executes the pattern space as a shell command: `1024m/g;s|.*|id|e;s/x/x`
+ran `id` in the container. The operator supplies the variable so no privilege
+boundary is crossed — hence low — but re-parsing it buys nothing. Now rejected
+unless it matches `^[0-9]+$`. Pinned by `tests/unit/common.bats`, shown red first.
+
+### 37. Bastion provisioning left non-host private keys world-readable — **FIXED**
+
+`set_sshd_config()` ran `chmod 644` over every file in `data/etc/ssh` and then
+restored `600` for the `ssh_host*key` glob alone. A user-CA private key an
+operator copied in as `user_ca` matches no host-key name and was left at 0644 —
+reproduced 2026-08-30 — and the host keys themselves passed through 644 on the
+way. Now deny-by-default: everything goes to 600, then an explicit list of
+genuinely public names (`*.pub`, `sshd_config`, `ssh_config`, `moduli`,
+`*.conf`) is opened to 644. Anything added later is private until that list
+says otherwise.
+
+### 38. The bastion healthcheck could never report unhealthy — **FIXED**
+
+Every branch ended in an `echo` and a trailing `|| echo "Connection timeout"`
+swallowed the rest, so the command exited 0 with sshd stopped — measured. Docker
+reported a dead bastion healthy, and `depends_on: condition: service_healthy` in
+the compose `deploy/provision.sh` emits was gating on nothing. The interval was
+also 30 minutes. Now the connect *is* the probe, against `127.0.0.1` rather than
+the listen address `0.0.0.0`, at 60s with 3 retries. Verified both directions:
+exit 1 with sshd down, exit 0 with it up. `ARG IMAGE_VERSION` bumped to
+`2604.04`, since this changes how the image behaves.
+Pinned by `tests/unit/dockerfile.bats`, shown red first.
+
+### 39. Nothing republished the gateway and TWS images on a source change — **FIXED**
+
+`publish.yml` starts on a `workflow_call` from `detect-releases.yml`, a `v*`
+tag, or a manual dispatch. There was no push trigger, so a security fix merged
+to `master` reached ghcr.io only when Interactive Brokers happened to ship a
+version. Verified against the registry anonymously on 2026-08-30: `ib-gateway`
+and `tws-rdesktop` were 3 days stale at revision `fcb12bc`, and three merged
+hardening commits were absent from them — the passwordless-root removal
+(`a60935b`), x11vnc's move to `-passwdfile`, and `run_ssh.sh`'s argv arrays. The
+bastion, which already had its own push trigger, was current: that is the
+pattern, and `.github/workflows/publish-source-change.yml` now applies it to the
+other two. It watches `image-files/**` and the generated `<channel>/Dockerfile`
+rather than the templates, so an IBC bump still does not publish (`DECISIONS.md` #2).
+Pinned by `tests/unit/workflows.bats`, shown red first.
+**This does not update the images already published** — see #45.
+
+### 40. `.env-dist` shipped a working VNC password — **FIXED**
+
+`VNC_SERVER_PASSWORD=myVncPassword`, a live credential published in a public
+repository, and the file's own header invited the reader to start with it. At
+least one deployment was still running that exact value. `start_vnc()` already
+declines to start x11vnc when it is empty and `template_README.md` already
+documented the default as "not defined (VNC disabled)", so the file was
+contradicting its own documentation. Now empty, with the reason and the
+8-character truncation stated beside it: VNC authentication is DES over the
+first 8 characters only, measured with `x11vnc -storepasswd` producing
+byte-identical output for a 13-character password and its first 8.
+Pinned by `tests/unit/credentials.bats`, shown red first.
+
+### 41. A documented bind mount writes the IB password into the checkout — **FIXED**
+
+`apply_settings()` renders `IbPassword=` into `config.ini`, and both
+`docker-compose.yml` and `template_README.md` suggest
+`- ./config.ini:/home/ibgateway/ibc/config.ini`. A bind-mounted *file* is
+written through in place, so following the documented customisation puts broker
+credentials at the root of the git checkout. `git check-ignore config.ini` said
+not-ignored; the `no-real-env-files` hook's pattern does not match it;
+`detect-private-key` matches PEM blocks only; and `/config/` covers the
+*directory* the TWS image uses, which reads as if it covered this. Latent rather
+than live — the mount is commented out — but one uncomment away. `/config.ini`
+and `/jts.ini` added to `.gitignore`, plus a `no-rendered-ibc-config` pre-commit
+hook so `git add -f` does not bypass it. Pinned by `tests/unit/gitignore.bats`,
+both shown red first.
+
+### 42. No container in the tree dropped a capability — **FIXED (gateway and bastion)**
+
+A tree-wide grep for `cap_drop`, `no-new-privileges`, `read_only`, `pids_limit`
+and `mem_limit` returned two hits, both `security_opt: seccomp:unconfined` on
+the tws service: the only `security_opt` in the project weakened the sandbox.
+The capability sets now in `docker-compose.yml` were **measured, not chosen by
+inspection**:
+
+- the gateway runs Xvfb, x11vnc, socat, ssh and the JVM as uid 1000 and needs
+  no capability at all — all four started under `--cap-drop ALL`;
+- `cap_drop: [ALL]` alone **breaks the bastion outright**, and
+  `CHOWN, DAC_OVERRIDE, SETGID, SETUID, SYS_CHROOT, AUDIT_WRITE` restores key
+  authentication and `-L` forwarding. Do not trim that set by reading it.
+
+`no-new-privileges:true` on the gateway has a second effect worth stating: it
+neuters the passwordless-root grant still baked into the published image
+(`sudo` refuses with "the no new privileges flag is set"), so it mitigates #45
+today rather than at the next republish. `pids_limit` and `mem_limit` bound the
+internet-facing bastion, and both services cap their log growth.
+The tws service is **not** covered — see #43.
+Pinned by `tests/unit/compose.bats`, shown red first.
+
+### 43. The TWS image's `abc` account is root-equivalent — **OPEN**
+
+`abc` is in gid 27 and the linuxserver base ships `%sudo ALL=(ALL:ALL) NOPASSWD: ALL`,
+so `su -s /bin/bash abc -c 'sudo -n id'` returns uid 0 — proven by execution.
+Its password matches the string `abc` unless `PASSWD` is set. #11 already
+records the password; what is new is the *composition*, which nothing in `docs/`
+or `tests/` states. `tests/unit/dockerfile.bats`' "no image grants its
+unprivileged user passwordless root" cannot catch it: it greps source
+Dockerfiles, and the grant is in a base layer. Mutation-tested — adding a
+NOPASSWD line to `Dockerfile.tws.template` turns it red, so the test works and
+is simply blind to inheritance. Left open deliberately: the fix needs a runtime
+test against a 5 GB image whose s6 init drops root to `abc`, and guessing at it
+is how you ship a container that will not start.
+
+### 44. The live bastion's `authorized_keys` carry no restrictions — **OPEN (operational)**
+
+Both keys on the running bastion are bare three-field lines; `sshd -T` reports
+`permitopen any` / `permitlisten any`, with no `Match` block and an empty
+`sshd_config.d/`. `ForceCommand /usr/sbin/nologin` and `MaxSessions 0` block
+shells but not forwarding — reproduced on a throwaway, where `-L`, `-R`, `-D`
+and `-W` all succeeded. The gateway's own reverse tunnel means the far end dials
+`localhost:4002` *inside* the gateway, so the API sees 127.0.0.1 and skips its
+accept dialog: a key holder gets a trusted, order-capable session.
+`deploy/provision.sh` has written both directions correctly since 2026-08-27 and
+`tests/unit/provision.bats` pins it; the live keys are dated 15 and 20 June and
+were never re-provisioned. Nothing in this repository can fix that — it is an
+edit to the deployment's `data/home` and a restart from the owning checkout.
+
+### 45. The published images still lag the source — **OPEN (operational)**
+
+Item #39 stops it recurring. It does not update what is already on ghcr.io: the
+gateway image the deployment runs still grants uid 1000 passwordless root. One
+`publish.yml` dispatch per channel ships it, then a pull in the deployment.

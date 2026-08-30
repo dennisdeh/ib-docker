@@ -319,3 +319,55 @@ run_blocks() {
 		return 1
 	}
 }
+
+# The bastion's healthcheck ended every branch in an `echo`, with a trailing
+# `|| echo "Connection timeout"` swallowing the rest, so it exited 0 whatever
+# happened - measured 2026-08-30 with sshd stopped. Docker therefore reported a
+# dead bastion healthy, and `depends_on: condition: service_healthy` in the
+# compose deploy/provision.sh emits gated on nothing. See docs/OPEN_ITEMS.md #38.
+@test "bastion: the healthcheck can actually report unhealthy" {
+	local dockerfile hc
+	dockerfile="${ROOT}/bastion/Dockerfile"
+	hc="$(sed -n '/^HEALTHCHECK/,/^$/p' "$dockerfile")"
+	[ -n "$hc" ] || {
+		echo "no HEALTHCHECK found in bastion/Dockerfile"
+		return 1
+	}
+	[[ $hc != *'|| echo'* ]] || {
+		echo "a trailing '|| echo' makes the healthcheck exit 0 on every path:"
+		echo "$hc"
+		return 1
+	}
+	[[ $hc != *'echo "Port is closed"'* ]] || {
+		echo "the failure branch still reports success by echoing:"
+		echo "$hc"
+		return 1
+	}
+	# 0.0.0.0 is a listen address, not a destination to dial.
+	[[ $hc != *'/dev/tcp/0.0.0.0/'* ]] || {
+		echo "the probe dials 0.0.0.0; a client connects to 127.0.0.1"
+		return 1
+	}
+	[[ $hc == *'/dev/tcp/127.0.0.1/22'* ]] || {
+		echo "expected the probe to connect to 127.0.0.1:22, got:"
+		echo "$hc"
+		return 1
+	}
+}
+
+# A behaviour change to the bastion must move its version, or publish-bastion.yml
+# overwrites the tag that is already out there with different content.
+@test "bastion: IMAGE_VERSION moved past the last published one" {
+	local declared
+	declared="$(sed -n 's/^ARG IMAGE_VERSION=//p' "${ROOT}/bastion/Dockerfile" | head -1)"
+	[[ $declared =~ ^[0-9]+\.[0-9]+$ ]] || {
+		echo "ARG IMAGE_VERSION is not a version: '${declared}'"
+		return 1
+	}
+	# 2604.03 was published on 2026-08-30 before the healthcheck fix.
+	[[ $declared != '2604.03' ]] || {
+		echo "the healthcheck changed how the image behaves, so IMAGE_VERSION"
+		echo "must move past 2604.03 rather than overwrite it."
+		return 1
+	}
+}

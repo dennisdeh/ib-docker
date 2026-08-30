@@ -131,6 +131,18 @@ set_ports() {
 set_java_heap() {
 	# set java heap size in vm options
 	if [ -n "${JAVA_HEAP_SIZE}" ]; then
+		# The value is spliced into a sed script below, so it must be digits
+		# and nothing else. Without this guard a crafted JAVA_HEAP_SIZE closes
+		# the s/// command and opens another: GNU sed's `e` flag executes the
+		# pattern space as a shell command, so `1024m/g;s|.*|id|e;s/x/x` ran
+		# `id` inside the container. Demonstrated 2026-08-30; the operator
+		# supplies this variable, so it crosses no privilege boundary in the
+		# default setup, but nothing is gained by re-parsing it.
+		# See docs/OPEN_ITEMS.md #36.
+		if ! [[ "${JAVA_HEAP_SIZE}" =~ ^[0-9]+$ ]]; then
+			echo ".> Invalid JAVA_HEAP_SIZE: '${JAVA_HEAP_SIZE}' (digits only, in MB)"
+			exit 1
+		fi
 		_vmpath="${TWS_PATH}/ibgateway/${IB_GATEWAY_VERSION}"
 		_string="s/-Xmx768m/-Xmx${JAVA_HEAP_SIZE}m/g"
 		sed -i "${_string}" "${_vmpath}/ibgateway.vmoptions"

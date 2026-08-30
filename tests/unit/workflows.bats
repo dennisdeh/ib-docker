@@ -646,3 +646,74 @@ resolve() {
 		return 1
 	}
 }
+
+# The installer download mints this repository's authoritative checksum. Without
+# `-f` curl exits 0 on a 404, writes the error page to the installer filename,
+# and `sha256sum` then signs it - a permanently wrong release asset that the
+# backfill step never repairs, because it tests only that an asset is present.
+# The sibling backfill step already used -sSLf; this one did not until
+# 2026-08-30. See docs/OPEN_ITEMS.md #35.
+@test "detect-releases: the installer download fails on an HTTP error" {
+	# Only the downloads whose output is then checksummed and uploaded: the
+	# version.json probe on the same host is metadata, not a release asset.
+	local hits
+	hits="$(grep -nE 'curl .*--output "\$dest"' \
+		"${WORKFLOWS}/detect-releases.yml" || true)"
+	[ -n "$hits" ] || {
+		echo "no installer download found in detect-releases.yml"
+		return 1
+	}
+	# Every curl that fetches an installer must carry -f, in whatever flag
+	# clump it is written (-sSLf, -fsSL, --fail).
+	while IFS= read -r line; do
+		[[ $line == *--fail* ]] && continue
+		[[ $line =~ curl[[:space:]]+-[A-Za-z]*f ]] && continue
+		echo "this download would save an HTTP error page and checksum it:"
+		echo "  $line"
+		return 1
+	done <<<"$hits"
+}
+
+# A merged security fix must reach ghcr.io without waiting for Interactive
+# Brokers to ship a version. publish.yml has no push trigger of its own, so a
+# separate workflow watches what the images actually contain.
+# See docs/OPEN_ITEMS.md #39.
+@test "publish: a source change republishes the gateway and TWS" {
+	local wf="${WORKFLOWS}/publish-source-change.yml"
+	[ -f "$wf" ] || {
+		echo "nothing republishes the images on a source change;"
+		echo "expected ${wf}"
+		return 1
+	}
+	run grep -qE '^ *- .image-files/\*\*.' "$wf"
+	[ "$status" -eq 0 ] || {
+		echo "the trigger does not watch image-files/**"
+		return 1
+	}
+	# The generated channel Dockerfiles, not the templates: watching the
+	# templates would publish on an IBC bump, which DECISIONS.md #2 says must
+	# not happen.
+	run grep -qE "^ *- .latest/Dockerfile." "$wf"
+	[ "$status" -eq 0 ]
+	run grep -qE "^ *- .stable/Dockerfile." "$wf"
+	[ "$status" -eq 0 ]
+	run grep -qE '^ *- .Dockerfile\.template.' "$wf"
+	[ "$status" -ne 0 ] || {
+		echo "watching Dockerfile.template republishes on an IBC bump;"
+		echo "watch the generated <channel>/Dockerfile instead. See DECISIONS.md #2."
+		return 1
+	}
+	# Both channels, and a version resolved rather than left empty - under
+	# workflow_call the event is still 'push', so publish.yml would read
+	# github.ref_name and fail its own version regex.
+	run grep -c 'uses: ./.github/workflows/publish.yml' "$wf"
+	[ "$output" -eq 2 ] || {
+		echo "expected both channels to be published, got $output call(s)"
+		return 1
+	}
+	run grep -qE 'version: \$\{\{ needs\.resolve\.outputs\.' "$wf"
+	[ "$status" -eq 0 ] || {
+		echo "version must be resolved from the channel Dockerfile, not left empty"
+		return 1
+	}
+}

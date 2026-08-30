@@ -8,6 +8,22 @@ services:
       - ib-gateway
     restart: always
     container_name: ${CONTAINER_NAME:-ib-gateway}
+    # Everything here runs as uid 1000 - Xvfb, x11vnc, socat, ssh, the JVM -
+    # and none of it needs a capability. Verified 2026-08-30 by starting all
+    # four under `--cap-drop ALL --security-opt no-new-privileges:true`.
+    # no-new-privileges also neuters the passwordless-root grant that is still
+    # baked into the published image (sudo refuses: "the no new privileges flag
+    # is set"), so it mitigates that today rather than at the next republish.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     build:
       context: ./latest
       tags:
@@ -161,6 +177,31 @@ services:
     pull_policy: build
     image: ghcr.io/dennisdeh/bastion:latest
     container_name: ${CONTAINER_NAME_BASTION:-bastion}
+    # sshd runs as root and needs six of the fourteen default capabilities.
+    # Measured 2026-08-30 against this image: `cap_drop: [ALL]` alone breaks
+    # authentication outright, and this set restores key auth and -L forwarding.
+    # Do not trim it by inspection - re-measure.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - SYS_CHROOT
+      - AUDIT_WRITE
+    security_opt:
+      - no-new-privileges:true
+    # This is the one service reachable from off the host, and it forks per
+    # connection. `MaxStartups 10:30:100` bounds sshd's own accept rate; these
+    # bound what the container can do to the host if that is ever not enough.
+    pids_limit: 256
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     ports:
       - ${SSH_LISTEN_PORT}:22
     environment:

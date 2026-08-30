@@ -132,3 +132,45 @@ teardown() {
 	set_java_heap
 	grep -qx -- '-Xmx768m' "$TMP/ibgateway/10.48.1e/ibgateway.vmoptions"
 }
+
+# JAVA_HEAP_SIZE is spliced into a `sed -i` script. A value carrying a `/` and a
+# `;` closes the s/// command and opens another, and GNU sed's `e` flag then
+# executes the pattern space as a shell command - `1024m/g;s|.*|id|e;s/x/x` ran
+# `id` inside the container when this was measured on 2026-08-30. The operator
+# supplies the variable so no privilege boundary is crossed, but re-parsing it
+# buys nothing. See docs/OPEN_ITEMS.md #36.
+@test "set_java_heap: a non-numeric heap size is refused, not spliced into sed" {
+	TWS_PATH="$TMP" IB_GATEWAY_VERSION=1.2.3 \
+		JAVA_HEAP_SIZE='1024m/g;s|.*|id > '"${TMP}"'/PWNED|e;s/x/x' \
+		run set_java_heap
+	[ "$status" -ne 0 ] || {
+		echo "a crafted JAVA_HEAP_SIZE was accepted:"
+		echo "$output"
+		return 1
+	}
+	[ ! -e "${TMP}/PWNED" ] || {
+		echo "the injected sed command executed"
+		return 1
+	}
+}
+
+@test "set_java_heap: a plain number is still accepted" {
+	mkdir -p "${TMP}/ibgateway/1.2.3"
+	printf -- '-Xmx768m\n' >"${TMP}/ibgateway/1.2.3/ibgateway.vmoptions"
+	TWS_PATH="$TMP" IB_GATEWAY_VERSION=1.2.3 JAVA_HEAP_SIZE=2048 run set_java_heap
+	[ "$status" -eq 0 ] || {
+		echo "a valid heap size was refused: $output"
+		return 1
+	}
+	run cat "${TMP}/ibgateway/1.2.3/ibgateway.vmoptions"
+	[ "$output" = '-Xmx2048m' ]
+}
+
+@test "set_java_heap: an unset heap size leaves the file alone" {
+	mkdir -p "${TMP}/ibgateway/1.2.3"
+	printf -- '-Xmx768m\n' >"${TMP}/ibgateway/1.2.3/ibgateway.vmoptions"
+	TWS_PATH="$TMP" IB_GATEWAY_VERSION=1.2.3 JAVA_HEAP_SIZE='' run set_java_heap
+	[ "$status" -eq 0 ]
+	run cat "${TMP}/ibgateway/1.2.3/ibgateway.vmoptions"
+	[ "$output" = '-Xmx768m' ]
+}

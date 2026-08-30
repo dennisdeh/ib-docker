@@ -53,3 +53,39 @@ setup() {
 		return 1
 	}
 }
+
+# config.ini and jts.ini are rendered from the .tmpl files with the IB password
+# substituted in, and both docker-compose.yml and template_README.md suggest
+# bind-mounting them from the repository root. A bind-mounted *file* is written
+# through in place, so following the documented customisation puts broker
+# credentials at the root of the checkout. Neither the `.env` pattern in the
+# pre-commit hook nor `detect-private-key` matches them, and `/config/` covers
+# the directory the TWS image uses, not these. See docs/OPEN_ITEMS.md #41.
+@test "gitignore: a rendered config.ini or jts.ini cannot be committed" {
+	run grep -qxF '/config.ini' "$GITIGNORE"
+	[ "$status" -eq 0 ] || {
+		echo "config.ini holds the cleartext IB password once rendered;"
+		echo "the documented bind mount writes it to the repository root."
+		return 1
+	}
+	run grep -qxF '/jts.ini' "$GITIGNORE"
+	[ "$status" -eq 0 ]
+}
+
+@test "gitignore: the pre-commit hook refuses them too, not just gitignore" {
+	local root cfg
+	root="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
+	cfg="${root}/.pre-commit-config.yaml"
+	run grep -q 'no-rendered-ibc-config' "$cfg"
+	[ "$status" -eq 0 ] || {
+		echo ".gitignore alone is bypassed by 'git add -f';"
+		echo "expected a no-rendered-ibc-config hook in .pre-commit-config.yaml"
+		return 1
+	}
+	# and it must not swallow the templates, which are tracked on purpose
+	run grep -qF '(config|jts)\.ini$' "$cfg"
+	[ "$status" -eq 0 ] || {
+		echo "the hook pattern must anchor on .ini so *.tmpl stays committable"
+		return 1
+	}
+}

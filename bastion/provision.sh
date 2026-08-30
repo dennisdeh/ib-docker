@@ -198,9 +198,16 @@ set_sshd_config() {
 	echo "> Setting /etc/ssh/* permissions and ownership"
 	chown root:root "$DATA"/etc/ssh/
 	chown root:root -R "$DATA"/etc/ssh/*
-	# set 644 onwership, 600 for private key
-	find "$DATA"/etc/ssh/ -type f -exec chmod 644 {} \;
-	chmod 600 "$DATA"/etc/ssh/ssh_host*key
+	# Deny by default, then re-open only what is genuinely public. This used to
+	# `chmod 644` every file and restore 600 for the `ssh_host*key` glob alone,
+	# so a user-CA private key an operator copied in - `user_ca`, matching no
+	# host-key name - was left world-readable at 0644, and the host keys passed
+	# through 644 on the way. Reproduced 2026-08-30; see docs/OPEN_ITEMS.md #37.
+	# Anything added here in future is private until this list says otherwise.
+	find "$DATA"/etc/ssh/ -type f -exec chmod 600 {} \;
+	find "$DATA"/etc/ssh/ \( -name '*.pub' -o -name 'sshd_config' \
+		-o -name 'ssh_config' -o -name 'moduli' -o -name '*.conf' \) \
+		-type f -exec chmod 644 {} \;
 }
 
 set_checksum() {

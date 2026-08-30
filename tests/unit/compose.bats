@@ -143,3 +143,71 @@ port_vars() {
 		return 1
 	}
 }
+
+# ---------------------------------------------------------------------------
+# Runtime hardening
+#
+# Until 2026-08-30 the only `security_opt` anywhere in the project was
+# `seccomp:unconfined` on the tws service - the sole such key weakened the
+# sandbox. Nothing dropped a capability, bounded PIDs or memory, or capped the
+# log. The capability sets below were measured, not chosen by inspection:
+# the gateway runs Xvfb, x11vnc, socat, ssh and the JVM as uid 1000 and needs
+# none, while `cap_drop: [ALL]` alone breaks sshd's authentication outright.
+# See docs/OPEN_ITEMS.md #42.
+
+# Gateway: no capability is needed, and no-new-privileges also neuters the
+# passwordless-root grant still baked into the published image.
+@test "compose: the gateway drops every capability" {
+	local block
+	block="$(service_block ib-gateway)"
+	[[ $block == *"cap_drop:"* ]] || {
+		echo "ib-gateway does not drop capabilities"
+		return 1
+	}
+	[[ $block == *"no-new-privileges:true"* ]] || {
+		echo "ib-gateway does not set no-new-privileges"
+		return 1
+	}
+}
+
+# The bastion is the one service reachable from off the host.
+@test "compose: the bastion keeps only the capabilities sshd needs" {
+	local block
+	block="$(service_block bastion)"
+	[[ $block == *"cap_drop:"* ]] || {
+		echo "bastion does not drop capabilities"
+		return 1
+	}
+	[[ $block == *"no-new-privileges:true"* ]]
+	# Measured: dropping all of these breaks key authentication.
+	local cap
+	for cap in CHOWN DAC_OVERRIDE SETGID SETUID SYS_CHROOT AUDIT_WRITE; do
+		[[ $block == *"- ${cap}"* ]] || {
+			echo "bastion is missing capability ${cap}; sshd cannot authenticate"
+			return 1
+		}
+	done
+}
+
+@test "compose: the internet-facing bastion is bounded" {
+	local block
+	block="$(service_block bastion)"
+	[[ $block == *"pids_limit:"* ]] || {
+		echo "the bastion forks per connection and has no PID bound"
+		return 1
+	}
+	[[ $block == *"mem_limit:"* ]] || {
+		echo "the bastion has no memory bound"
+		return 1
+	}
+}
+
+@test "compose: sshd log growth is capped on the service that faces the network" {
+	local block
+	block="$(service_block bastion)"
+	[[ $block == *"max-size:"* ]] || {
+		echo "an internet-facing sshd with LogLevel VERBOSE and no log cap"
+		echo "fills the host that runs the trading stack"
+		return 1
+	}
+}
