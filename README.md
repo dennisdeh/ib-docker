@@ -85,9 +85,9 @@ tunnel dials — for `linux/amd64` and `linux/arm64`, with the following tags:
 | Image| Channel  | IB Gateway Version  | IBC Version      | Docker Tags                                    |
 | --- | -------- | ------------------- | ---------------- | ---------------------------------------------- |
 | [ib-gateway][1] | `latest` | `10.50.1e` | `3.24.2` | `latest` `10.50` `10.50.1e` |
-| [ib-gateway][1] |`stable` | `10.45.1j` | `3.24.2` | `stable` `10.45` `10.45.1j` |
+| [ib-gateway][1] |`stable` | `10.50.1f` | `3.24.2` | `stable` `10.50` `10.50.1f` |
 | [tws-rdesktop][2] | `latest` | `10.50.1e` | `3.24.2` | `latest` `10.50` `10.50.1e` |
-| [tws-rdesktop][2] |`stable` | `10.45.1j` | `3.24.2` | `stable` `10.45` `10.45.1j` |
+| [tws-rdesktop][2] |`stable` | `10.50.1f` | `3.24.2` | `stable` `10.50` `10.50.1f` |
 | [bastion][3] | — | — | — | `latest` `2604.04` |
 
 All tags are available in the container repository for [ib-gateway][1] and
@@ -957,7 +957,7 @@ page, so an unexpected filename shows up there.
 
     ```bash
     ./update.sh latest 10.50.1e
-    ./update.sh stable 10.45.1j
+    ./update.sh stable 10.50.1f
     ```
 
 1. To build the other architecture on an x86 machine, register the emulator
