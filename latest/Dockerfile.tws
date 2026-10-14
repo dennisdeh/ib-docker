@@ -12,7 +12,7 @@
 # on ghcr.io yet - can point them at an image it has just built. See
 # docs/DECISIONS.md.
 ARG IB_GATEWAY_BASE_IMAGE=ghcr.io/dennisdeh/ib-gateway
-ARG IB_VERSION=10.50.1e
+ARG IB_VERSION=10.51.1c
 FROM ${IB_GATEWAY_BASE_IMAGE}:${IB_VERSION} AS setup
 
 WORKDIR /
@@ -23,7 +23,7 @@ WORKDIR /
 
 FROM lscr.io/linuxserver/rdesktop:ubuntu-xfce
 
-ENV IB_GATEWAY_VERSION=10.50.1e
+ENV IB_GATEWAY_VERSION=10.51.1c
 ENV IB_GATEWAY_RELEASE_CHANNEL=latest
 ENV IBC_VERSION=3.24.2
 
