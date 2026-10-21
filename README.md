@@ -84,9 +84,9 @@ tunnel dials — for `linux/amd64` and `linux/arm64`, with the following tags:
 
 | Image| Channel  | IB Gateway Version  | IBC Version      | Docker Tags                                    |
 | --- | -------- | ------------------- | ---------------- | ---------------------------------------------- |
-| [ib-gateway][1] | `latest` | `10.50.1e` | `3.24.2` | `latest` `10.50` `10.50.1e` |
+| [ib-gateway][1] | `latest` | `10.51.1d` | `3.24.2` | `latest` `10.51` `10.51.1d` |
 | [ib-gateway][1] |`stable` | `10.45.1j` | `3.24.2` | `stable` `10.45` `10.45.1j` |
-| [tws-rdesktop][2] | `latest` | `10.50.1e` | `3.24.2` | `latest` `10.50` `10.50.1e` |
+| [tws-rdesktop][2] | `latest` | `10.51.1d` | `3.24.2` | `latest` `10.51` `10.51.1d` |
 | [tws-rdesktop][2] |`stable` | `10.45.1j` | `3.24.2` | `stable` `10.45` `10.45.1j` |
 | [bastion][3] | — | — | — | `latest` `2604.04` |
 
@@ -123,7 +123,7 @@ users, the secrets and the directory layout — and writes a compose file that
 ```bash
 curl -fLO https://raw.githubusercontent.com/dennisdeh/ib-docker/master/deploy/provision.sh
 chmod +x provision.sh
-./provision.sh init --version 10.50.1e --clients jupyter,research
+./provision.sh init --version 10.51.1d --clients jupyter,research
 ```
 
 Run it from a checkout instead and `--version` is read from the channel's
@@ -956,7 +956,7 @@ page, so an unexpected filename shows up there.
    next release run, silently:
 
     ```bash
-    ./update.sh latest 10.50.1e
+    ./update.sh latest 10.51.1d
     ./update.sh stable 10.45.1j
     ```
 

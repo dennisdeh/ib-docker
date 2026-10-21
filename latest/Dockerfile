@@ -8,7 +8,7 @@
 # hadolint global ignore=DL3008,DL4006
 FROM ubuntu:24.04 AS setup
 
-ENV IB_GATEWAY_VERSION=10.50.1e
+ENV IB_GATEWAY_VERSION=10.51.1d
 ENV IB_GATEWAY_CHANNEL=latest
 ENV IBC_VERSION=3.24.2
 ARG DEBIAN_FRONTEND=noninteractive
@@ -80,7 +80,7 @@ COPY ./scripts /root/scripts
 
 FROM ubuntu:24.04
 
-ENV IB_GATEWAY_VERSION=10.50.1e
+ENV IB_GATEWAY_VERSION=10.51.1d
 # Read by the version LABEL at the end of this file, and by nothing else. The
 # setup stage's IB_GATEWAY_CHANNEL does not reach here - a later stage inherits
 # no variables - so the name has to be declared again; Dockerfile.tws.template
